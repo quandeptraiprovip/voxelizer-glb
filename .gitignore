@@ -1,0 +1,39 @@
+# Node
+node_modules
+package-lock.json
+yarn.lock
+
+# Next.js
+.next
+out
+dist
+build
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+venv
+env
+.Python
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Temp
+*.tmp
+*.log

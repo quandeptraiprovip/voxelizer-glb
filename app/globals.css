@@ -1,0 +1,145 @@
+/* ==========================================================
+   VOXELIZER WEB — SPATIAL GLASS aesthetic
+   Glassmorphism inspired by visionOS / spatial UI.
+   Aurora gradient background, translucent panels, generous
+   rounded corners, soft inner highlights.
+   ========================================================== */
+
+:root {
+  /* Aurora tokens — dark default */
+  --bg-deep: #0a0e1c;
+  --aurora-a: rgba(150, 100, 255, 0.45);  /* violet */
+  --aurora-b: rgba(80, 200, 255, 0.40);   /* cyan */
+  --aurora-c: rgba(255, 180, 140, 0.30);  /* peach */
+
+  /* Glass surfaces */
+  --glass-fill: rgba(255, 255, 255, 0.10);
+  --glass-fill-strong: rgba(255, 255, 255, 0.16);
+  --glass-fill-soft: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-border-strong: rgba(255, 255, 255, 0.30);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+
+  --shadow-elev-1: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-elev-2: 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-elev-3: 0 30px 70px rgba(0, 0, 0, 0.45);
+
+  /* Text */
+  --ink: rgba(255, 255, 255, 0.95);
+  --ink-dim: rgba(255, 255, 255, 0.70);
+  --ink-mute: rgba(255, 255, 255, 0.50);
+  --ink-faint: rgba(255, 255, 255, 0.32);
+
+  /* Accents */
+  --amber: #ffd07a;
+  --amber-soft: rgba(255, 208, 122, 0.20);
+  --amber-border: rgba(255, 208, 122, 0.50);
+  --cyan: #9be3ff;
+  --cyan-soft: rgba(155, 227, 255, 0.20);
+  --violet: #c4a4ff;
+  --rose: #ffb3d4;
+  --green: #9ce8b9;
+  --danger: #ff8a8a;
+
+  /* radii */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* Fonts */
+  --font-display: 'SF Pro Display', -apple-system, 'Inter', system-ui, sans-serif;
+  --font-body: 'SF Pro Text', -apple-system, 'Inter', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Light theme — warm cream aurora */
+[data-theme="light"] {
+  --bg-deep: #f3ece0;
+  --aurora-a: rgba(220, 160, 255, 0.40);
+  --aurora-b: rgba(140, 210, 255, 0.40);
+  --aurora-c: rgba(255, 200, 140, 0.50);
+
+  --glass-fill: rgba(255, 255, 255, 0.55);
+  --glass-fill-strong: rgba(255, 255, 255, 0.72);
+  --glass-fill-soft: rgba(255, 255, 255, 0.35);
+  --glass-border: rgba(60, 40, 20, 0.10);
+  --glass-border-strong: rgba(60, 40, 20, 0.20);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+  --shadow-elev-1: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-elev-2: 0 16px 40px rgba(0, 0, 0, 0.20);
+  --shadow-elev-3: 0 30px 70px rgba(0, 0, 0, 0.25);
+
+  --ink: rgba(30, 20, 10, 0.96);
+  --ink-dim: rgba(30, 20, 10, 0.65);
+  --ink-mute: rgba(30, 20, 10, 0.45);
+  --ink-faint: rgba(30, 20, 10, 0.28);
+
+  --amber: #b07020;
+  --amber-soft: rgba(176, 112, 32, 0.18);
+  --amber-border: rgba(176, 112, 32, 0.40);
+  --cyan: #2a6fa0;
+  --cyan-soft: rgba(42, 111, 160, 0.18);
+  --violet: #6a3fb0;
+  --rose: #b03070;
+  --green: #2e7a44;
+  --danger: #b22020;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#__next {
+  width: 100%;
+  height: 100%;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* Scrollbar styling — slim glass */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--glass-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--glass-border-strong);
+}
+
+/* Light theme scrollbar */
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: var(--glass-border);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--glass-border-strong);
+}
