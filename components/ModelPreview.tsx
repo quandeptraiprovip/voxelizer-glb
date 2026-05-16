@@ -33,23 +33,37 @@ export default function ModelPreview({ geometry, width = 300, height = 160 }: Mo
           return;
         }
 
-        geometry.computeBoundingBox();
-        const bbox = geometry.boundingBox!;
-        const boundingMin: [number, number, number] = [bbox.min.x, bbox.min.y, bbox.min.z];
-        const boundingMax: [number, number, number] = [bbox.max.x, bbox.max.y, bbox.max.z];
-
         const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
         const existingColors = colorAttr
           ? (new Float32Array(colorAttr.array as ArrayLike<number>))
           : null;
 
-        const posArray = new Float32Array(pos.array as ArrayLike<number>);
-        const colors = await buildPreviewVertexColorsAsync(
-          posArray,
-          boundingMin,
-          boundingMax,
-          existingColors
-        );
+        if (existingColors && existingColors.length > 0) {
+          const sample = [
+            [existingColors[0], existingColors[1], existingColors[2]],
+            [existingColors[3], existingColors[4], existingColors[5]],
+            [existingColors[Math.min(6, existingColors.length - 3)], existingColors[Math.min(7, existingColors.length - 2)], existingColors[Math.min(8, existingColors.length - 1)]],
+          ];
+
+          // Don't use Math.min(...array) with 776k+ elements - causes stack overflow
+          // Use loop instead for large arrays
+          let minColor = existingColors[0];
+          let maxColor = existingColors[0];
+          for (let i = 1; i < existingColors.length; i++) {
+            if (existingColors[i] < minColor) minColor = existingColors[i];
+            if (existingColors[i] > maxColor) maxColor = existingColors[i];
+          }
+
+          const allWhite = existingColors.every((v) => Math.abs(v - 1) < 0.01);
+          const allZero = existingColors.every((v) => Math.abs(v) < 0.01);
+
+          console.log('[ModelPreview] ✓ Geometry HAS vertex colors:', `${pos.count} vertices`);
+          console.log('[ModelPreview] Color range:', minColor.toFixed(2), '-', maxColor.toFixed(2));
+          console.log('[ModelPreview] Sample colors:', sample.map(rgb => ({r: rgb[0].toFixed(2), g: rgb[1].toFixed(2), b: rgb[2].toFixed(2)})));
+          console.log('[ModelPreview] All white?', allWhite, '| All black?', allZero);
+        } else {
+          console.log('[ModelPreview] ✗ Geometry has NO vertex colors');
+        }
 
         if (!isMounted || !m) return;
 
@@ -61,51 +75,45 @@ export default function ModelPreview({ geometry, width = 300, height = 160 }: Mo
 
         const scene = new THREE.Scene();
 
-        const geo = geometry.clone();
-        geo.computeBoundingBox();
-        const center = new THREE.Vector3();
-        geo.boundingBox!.getCenter(center);
-        geo.translate(-center.x, -center.y, -center.z);
+        const geo = geometry;
 
-        geo.computeBoundingBox();
-        const size = new THREE.Vector3();
-        geo.boundingBox!.getSize(size);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        if (maxDim > 0) {
-          const s = 2 / maxDim;
-          geo.scale(s, s, s);
-        }
-
-        if (!geo.getAttribute('normal')) geo.computeVertexNormals();
-
-        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const useVertexColorsFlag = existingColors ? true : false;
+        console.log('[ModelPreview] Creating material with vertexColors:', useVertexColorsFlag);
 
         const material = new THREE.MeshPhongMaterial({
           side: THREE.DoubleSide,
-          vertexColors: true,
-          shininess: 100,
-          specular: 0x333333,
+          vertexColors: useVertexColorsFlag,
+          shininess: 30,  // Reduced for more color visibility
+          specular: 0x1a1a1a,  // Reduced specular highlight
           emissive: 0x0a0a0a,
-          color: 0xcccccc,
+          color: 0xffffff,
+        });
+
+        console.log('[ModelPreview] Material config:', {
+          vertexColors: material.vertexColors,
+          color: material.color.getHexString(),
+          emissive: material.emissive.getHexString(),
         });
 
         const mesh = new THREE.Mesh(geo, material);
         scene.add(mesh);
+        console.log('[ModelPreview] ✓ Mesh added to scene');
 
         const wfMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.03 });
         scene.add(new THREE.LineSegments(new THREE.WireframeGeometry(geo), wfMat));
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+        // Increased ambient light to make colors more visible
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
-        const dl1 = new THREE.DirectionalLight(0xffffff, 1.1);
+        const dl1 = new THREE.DirectionalLight(0xffffff, 1.2);
         dl1.position.set(5, 6, 5);
         scene.add(dl1);
 
-        const dl2 = new THREE.DirectionalLight(0xff6b9d, 0.6);
+        const dl2 = new THREE.DirectionalLight(0xff6b9d, 0.4);
         dl2.position.set(-4, 3, -5);
         scene.add(dl2);
 
-        const dl3 = new THREE.DirectionalLight(0x00d4ff, 0.5);
+        const dl3 = new THREE.DirectionalLight(0x00d4ff, 0.3);
         dl3.position.set(3, -4, 4);
         scene.add(dl3);
 

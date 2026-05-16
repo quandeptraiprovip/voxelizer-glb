@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import styles from './page.module.css';
 import { parseModelFile, voxelizeGeometryAsync } from '@/lib/voxelizer';
+import { GLBDebugPanel } from '@/components/GLBDebugPanel';
 
 const VoxelViewer = dynamic(() => import('@/components/VoxelViewer'), {
   ssr: false,
@@ -75,8 +76,8 @@ export default function Home() {
     setStatus('Parsing model…');
 
     try {
-      const geo = await parseModelFile(selected);
-      setParsedGeometry(geo);
+      const parsed = await parseModelFile(selected);
+      setParsedGeometry(parsed.geometry);
       setStatus('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse model');
@@ -442,6 +443,16 @@ export default function Home() {
         <div className={styles.hudItem}>
           <b>Voxelizer</b> Spatial Glass
         </div>
+      </div>
+
+      {/* ===== DEBUG PANEL ===== */}
+      <div className={styles.debugPanelContainer}>
+        <details className={styles.debugDetails}>
+          <summary className={styles.debugSummary}>🔍 GLB Debug Analyzer</summary>
+          <div className={styles.debugContent}>
+            <GLBDebugPanel />
+          </div>
+        </details>
       </div>
     </div>
   );

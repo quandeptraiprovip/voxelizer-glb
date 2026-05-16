@@ -420,7 +420,7 @@ function voxelize(
     (bbox.min[1] + bbox.max[1]) * 0.5,
     (bbox.min[2] + bbox.max[2]) * 0.5,
   ];
-  const gridOffset = [
+  const gridOffset: [number, number, number] = [
     bboxCenter[0] - (gridX * voxelSize) * 0.5,
     bboxCenter[1] - (gridY * voxelSize) * 0.5,
     bboxCenter[2] - (gridZ * voxelSize) * 0.5,

@@ -14,39 +14,97 @@ export interface Voxel {
   type?: 'surface' | 'interior';
 }
 
+export interface ParsedModel {
+  geometry: THREE.BufferGeometry;
+  surfaceColor: string;
+}
+
 const EPSILON = 1e-8;
+
+// Map glTF componentType codes to byte sizes
+function getComponentTypeSize(componentType: number): number {
+  switch (componentType) {
+    case 5120: // BYTE
+    case 5121: // UNSIGNED_BYTE
+      return 1;
+    case 5122: // SHORT
+    case 5123: // UNSIGNED_SHORT
+      return 2;
+    case 5125: // UNSIGNED_INT
+    case 5126: // FLOAT
+      return 4;
+    default:
+      console.warn(`Unknown componentType: ${componentType}, assuming 4 bytes`);
+      return 4;
+  }
+}
+
+// Extract dominant surface color from glTF JSON materials
+function extractDominantSurfaceColor(json: any): string {
+  if (!json.materials?.length) return '#cccccc';
+
+  const material = json.materials[0];
+
+  // Try baseColorFactor first (PBR)
+  const bcf = material?.pbrMetallicRoughness?.baseColorFactor;
+  if (bcf && bcf.length >= 3) {
+    const r = Math.round(Math.max(0, Math.min(1, bcf[0] ?? 1)) * 255);
+    const g = Math.round(Math.max(0, Math.min(1, bcf[1] ?? 1)) * 255);
+    const b = Math.round(Math.max(0, Math.min(1, bcf[2] ?? 1)) * 255);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  // Fallback: direct color property
+  if (material?.color && Array.isArray(material.color) && material.color.length >= 3) {
+    const r = Math.round(Math.max(0, Math.min(1, material.color[0] ?? 1)) * 255);
+    const g = Math.round(Math.max(0, Math.min(1, material.color[1] ?? 1)) * 255);
+    const b = Math.round(Math.max(0, Math.min(1, material.color[2] ?? 1)) * 255);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  // Fallback: emissiveFactor
+  if (material?.emissiveFactor && Array.isArray(material.emissiveFactor) && material.emissiveFactor.length >= 3) {
+    const r = Math.round(Math.max(0, Math.min(1, material.emissiveFactor[0] ?? 1)) * 255);
+    const g = Math.round(Math.max(0, Math.min(1, material.emissiveFactor[1] ?? 1)) * 255);
+    const b = Math.round(Math.max(0, Math.min(1, material.emissiveFactor[2] ?? 1)) * 255);
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  return '#cccccc';
+}
 
 // ─── FILE PARSERS ─────────────────────────────────────────────────────────────
 
-export async function parseModelFile(file: File): Promise<THREE.BufferGeometry> {
+export async function parseModelFile(file: File): Promise<ParsedModel> {
   const arrayBuffer = await file.arrayBuffer();
   const uint8 = new Uint8Array(arrayBuffer);
   const ext = file.name.toLowerCase();
 
-  // Parse synchronously for now - web worker has compatibility issues
-  // TODO: Fix worker loading with Next.js
-  let geo: THREE.BufferGeometry;
+  let result: ParsedModel;
 
   if (ext.endsWith('.glb') || ext.endsWith('.gltf')) {
-    geo = parseGLB(uint8);
+    result = await parseGLB(uint8);
   } else if (ext.endsWith('.obj')) {
-    geo = parseOBJ(new TextDecoder().decode(uint8));
+    result = { geometry: parseOBJ(new TextDecoder().decode(uint8)), surfaceColor: '#cccccc' };
   } else if (ext.endsWith('.stl')) {
-    geo = parseSTL(uint8);
+    result = { geometry: parseSTL(uint8), surfaceColor: '#cccccc' };
   } else {
     throw new Error('Unsupported file format');
   }
 
-  return geo;
+  return result;
 }
 
-function parseGLB(data: Uint8Array): THREE.BufferGeometry {
+async function parseGLB(data: Uint8Array): Promise<ParsedModel> {
+  console.log('[GLB Parser] Starting GLB parse...');
   const view = new DataView(data.buffer, data.byteOffset);
   if (view.getUint32(0, true) !== 0x46546c67) throw new Error('Invalid GLB file');
 
   const fileLength = view.getUint32(8, true);
   let offset = 12;
   let geometry: THREE.BufferGeometry | null = null;
+  let surfaceColor = '#cccccc';
+  let json: any = null;
 
   while (offset < fileLength) {
     const chunkLength = view.getUint32(offset, true);
@@ -54,8 +112,12 @@ function parseGLB(data: Uint8Array): THREE.BufferGeometry {
     offset += 8;
 
     if (chunkType === 0x4e4f534a /* JSON */) {
-      const json = JSON.parse(new TextDecoder().decode(data.subarray(offset, offset + chunkLength)));
+      json = JSON.parse(new TextDecoder().decode(data.subarray(offset, offset + chunkLength)));
       offset += chunkLength;
+
+      // Extract surface color from materials
+      surfaceColor = extractDominantSurfaceColor(json);
+      console.log('[GLB Parser] Extracted surface color:', surfaceColor);
 
       // Find BIN chunk
       while (offset < fileLength) {
@@ -64,7 +126,7 @@ function parseGLB(data: Uint8Array): THREE.BufferGeometry {
         offset += 8;
         if (binType === 0x004e4942 /* BIN */) {
           // Pass the exact slice so byteOffset is always 0 inside helpers
-          geometry = parseGLTFMesh(json, data.slice(offset, offset + binLen));
+          geometry = await parseGLTFMesh(json, data.slice(offset, offset + binLen));
           break;
         }
         offset += binLen;
@@ -76,10 +138,130 @@ function parseGLB(data: Uint8Array): THREE.BufferGeometry {
 
   if (!geometry) throw new Error('No mesh found in GLB');
   if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
-  return geometry;
+  return { geometry, surfaceColor };
 }
 
-function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
+// Load and decode image data from GLB binary
+async function loadImageFromGLB(json: any, binData: Uint8Array, imageIdx: number): Promise<ImageData | null> {
+  try {
+    const image = json.images?.[imageIdx];
+    if (!image) return null;
+
+    let imageData: Uint8Array | null = null;
+
+    // Image data is in a bufferView
+    if (image.bufferView !== undefined) {
+      const bufferView = json.bufferViews?.[image.bufferView];
+      if (!bufferView) return null;
+
+      const offset = bufferView.byteOffset ?? 0;
+      const length = bufferView.byteLength;
+      imageData = binData.slice(offset, offset + length);
+    }
+    // Or image data is a data URI
+    else if (image.uri && image.uri.startsWith('data:')) {
+      const base64 = image.uri.split(',')[1];
+      imageData = new Uint8Array(atob(base64).split('').map(c => c.charCodeAt(0)));
+    }
+
+    if (!imageData) return null;
+
+    // Decode image using createImageBitmap
+    const blob = new Blob([new Uint8Array(imageData)] as any, { type: image.mimeType || 'image/png' });
+    const imageBitmap = await createImageBitmap(blob);
+
+    // Draw to canvas to get ImageData
+    // Try OffscreenCanvas first (worker-friendly), fallback to regular Canvas
+    let imageResult: ImageData | null = null;
+
+    try {
+      const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
+      const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
+      if (ctx) {
+        ctx.drawImage(imageBitmap, 0, 0);
+        imageResult = ctx.getImageData(0, 0, imageBitmap.width, imageBitmap.height);
+      }
+    } catch (e) {
+      // Fallback to regular Canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(imageBitmap, 0, 0);
+        imageResult = ctx.getImageData(0, 0, imageBitmap.width, imageBitmap.height);
+      }
+    }
+
+    return imageResult;
+  } catch (err) {
+    console.error(`[Texture] Failed to load image ${imageIdx}:`, err);
+    return null;
+  }
+}
+
+// Sample a color from texture coordinates
+function sampleTexture(imageData: ImageData | null, u: number, v: number, vertexIndex?: number): [number, number, number] {
+  if (!imageData) return [1, 1, 1];
+
+  // Clamp UV to [0, 1]
+  u = Math.max(0, Math.min(1, u));
+  v = Math.max(0, Math.min(1, v)); // Try without flipping first
+
+  const x = Math.floor(u * (imageData.width - 1));
+  const y = Math.floor(v * (imageData.height - 1));
+  const idx = (y * imageData.width + x) * 4;
+
+  const data = imageData.data;
+  const r = (data[idx] ?? 255) / 255;
+  const g = (data[idx + 1] ?? 255) / 255;
+  const b = (data[idx + 2] ?? 255) / 255;
+
+  // Log first few samples for debugging
+  if (vertexIndex !== undefined && vertexIndex < 3) {
+    console.log(`[Texture] Vertex ${vertexIndex}: UV=(${u.toFixed(3)}, ${v.toFixed(3)}) → PixelXY=(${x}, ${y}) → RGB=[${r.toFixed(2)}, ${g.toFixed(2)}, ${b.toFixed(2)}]`);
+  }
+
+  return [r, g, b];
+}
+
+async function parseGLTFMesh(json: any, binData: Uint8Array): Promise<THREE.BufferGeometry> {
+  console.log('[GLB Parser] parseGLTFMesh called, nodes:', json.nodes?.length, 'meshes:', json.meshes?.length);
+  console.log('[GLB Parser] BIN chunk size:', binData.byteLength, 'bytes');
+
+  // Diagnostic: log all bufferViews
+  if (json.bufferViews?.length) {
+    console.log('[GLB Parser] BufferViews:');
+    json.bufferViews.forEach((bv: any, idx: number) => {
+      const offset = bv.byteOffset ?? 0;
+      const length = bv.byteLength ?? '(not declared)';
+      const stride = bv.byteStride ? ` stride:${bv.byteStride}` : '';
+      console.log(`  [${idx}] offset:${offset}, length:${length}${stride}`);
+    });
+  }
+
+  // Log high-level GLB structure
+  console.log('[GLB Overview] Structure:', {
+    meshes: json.meshes?.length || 0,
+    materials: json.materials?.length || 0,
+    textures: json.textures?.length || 0,
+    images: json.images?.length || 0,
+    nodes: json.nodes?.length || 0,
+    accessors: json.accessors?.length || 0,
+    bufferViews: json.bufferViews?.length || 0,
+  });
+
+  // List all materials briefly
+  if (json.materials?.length) {
+    console.log('[GLB Materials] Count:', json.materials.length);
+    json.materials.forEach((mat: any, idx: number) => {
+      const bcf = mat.pbrMetallicRoughness?.baseColorFactor;
+      const hasTexture = !!mat.pbrMetallicRoughness?.baseColorTexture;
+      const colorStr = bcf ? `[${bcf[0]?.toFixed(2)}, ${bcf[1]?.toFixed(2)}, ${bcf[2]?.toFixed(2)}]` : 'none';
+      console.log(`  Material ${idx}: ${mat.name || '(unnamed)'}, baseColorFactor: ${colorStr}, hasTexture: ${hasTexture}`);
+    });
+  }
+
   const geo = new THREE.BufferGeometry();
   if (!json.meshes?.length) return geo;
 
@@ -91,20 +273,168 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
   let vertexCount = 0;
   let totalPositions = 0;
 
+  // Debug: log transforms found
+  const transformLog: string[] = [];
+
+  // Build node transform matrix map with parent hierarchy support
+  const nodeMatrices = new Map<number, number[]>();
+  const accumulatedMatrices = new Map<number, number[]>();
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+  if (json.nodes) {
+    // First pass: build local transforms
+    for (let i = 0; i < json.nodes.length; i++) {
+      const node = json.nodes[i];
+      const matrix = node.matrix || buildNodeMatrix(node);
+      if (matrix) {
+        nodeMatrices.set(i, matrix);
+      } else {
+        nodeMatrices.set(i, identity);
+      }
+    }
+
+    // Second pass: accumulate transforms along hierarchy
+    const visited = new Set<number>();
+    const accumulate = (nodeIdx: number, parentMatrix: number[] = identity): number[] => {
+      if (accumulatedMatrices.has(nodeIdx)) return accumulatedMatrices.get(nodeIdx)!;
+      if (visited.has(nodeIdx)) {
+        console.warn(`Circular reference detected in node ${nodeIdx}`);
+        return parentMatrix;
+      }
+
+      visited.add(nodeIdx);
+      const node = json.nodes[nodeIdx];
+      const localMatrix = nodeMatrices.get(nodeIdx) || identity;
+      const worldMatrix = multiplyMatrices(parentMatrix, localMatrix);
+      accumulatedMatrices.set(nodeIdx, worldMatrix);
+
+      // Recursively accumulate children
+      if (node.children) {
+        for (const childIdx of node.children) {
+          accumulate(childIdx, worldMatrix);
+        }
+      }
+
+      return worldMatrix;
+    };
+
+    // Find and accumulate from root nodes (nodes not referenced as children)
+    const childSet = new Set<number>();
+    for (const node of json.nodes) {
+      if (node.children) {
+        for (const childIdx of node.children) {
+          childSet.add(childIdx);
+        }
+      }
+    }
+
+    for (let i = 0; i < json.nodes.length; i++) {
+      if (!childSet.has(i)) {
+        accumulate(i);
+      }
+    }
+
+    // Ensure all nodes are processed (in case of orphaned nodes)
+    for (let i = 0; i < json.nodes.length; i++) {
+      if (!accumulatedMatrices.has(i)) {
+        accumulatedMatrices.set(i, nodeMatrices.get(i) || identity);
+      }
+    }
+  }
+
+  // Build mesh-to-node mapping (which nodes use which meshes)
+  const meshNodeMap = new Map<number, number[]>();
+  if (json.nodes) {
+    for (let nodeIdx = 0; nodeIdx < json.nodes.length; nodeIdx++) {
+      const node = json.nodes[nodeIdx];
+      if (node.mesh !== undefined) {
+        if (!meshNodeMap.has(node.mesh)) {
+          meshNodeMap.set(node.mesh, []);
+        }
+        meshNodeMap.get(node.mesh)!.push(nodeIdx);
+        transformLog.push(`DEBUG: Node ${nodeIdx} → Mesh ${node.mesh}`);
+      }
+    }
+  }
+
+  transformLog.push(`DEBUG: Mesh-to-Node map: ${meshNodeMap.size} entries`);
+  transformLog.push(`DEBUG: Accumulated matrices: ${accumulatedMatrices.size} entries`);
+
   // Merge all meshes and primitives
-  for (const mesh of json.meshes) {
+  for (let meshIdx = 0; meshIdx < json.meshes.length; meshIdx++) {
+    const mesh = json.meshes[meshIdx];
     if (!mesh.primitives?.length) continue;
+
+    // Get transform matrices for this mesh (if used by nodes)
+    const nodeIndices = meshNodeMap.get(meshIdx) || [];
+    const matrices = nodeIndices
+      .map(idx => accumulatedMatrices.get(idx))
+      .filter((m): m is number[] => m !== undefined);
+
+    transformLog.push(`DEBUG: Mesh ${meshIdx}: found ${nodeIndices.length} nodes, ${matrices.length} matrices`);
+
     for (const prim of mesh.primitives) {
       if (prim.attributes?.POSITION === undefined) continue;
 
+      // DEBUG: Log all attributes and material info
+      const attrs = Object.keys(prim.attributes || {});
+      console.log(`[GLB] Mesh ${meshIdx} Primitive:`, {
+        attributes: attrs,
+        hasMaterial: prim.material !== undefined,
+        materialIdx: prim.material,
+        materialName: prim.material !== undefined ? json.materials?.[prim.material]?.name : 'none',
+      });
+
+      // Log details for each attribute
+      for (const attrName of attrs) {
+        const accessorIdx = prim.attributes[attrName];
+        const accessor = accessors[accessorIdx];
+        if (accessor) {
+          console.log(`  - ${attrName}: type=${accessor.type}, componentType=${accessor.componentType}, count=${accessor.count}`);
+        }
+      }
+
+      if (prim.material !== undefined && json.materials?.[prim.material]) {
+        const mat = json.materials[prim.material];
+        console.log(`[GLB] Material[${prim.material}] full structure:`, JSON.stringify(mat, null, 2));
+
+        // Extra logging for texture references
+        if (mat.pbrMetallicRoughness?.baseColorTexture) {
+          console.log(`  → baseColorTexture index: ${mat.pbrMetallicRoughness.baseColorTexture.index}`);
+        }
+        if (mat.normalTexture) {
+          console.log(`  → normalTexture index: ${mat.normalTexture.index}`);
+        }
+      } else if (prim.material !== undefined) {
+        console.warn(`[GLB] Material index ${prim.material} referenced but not found in json.materials`);
+      }
+
       // Read positions
-      const pos = readFloats(binData, accessors[prim.attributes.POSITION], bufferViews);
+      let pos = readFloats(binData, accessors[prim.attributes.POSITION], bufferViews);
+
+      // Apply transform matrices if available
+      if (matrices.length > 0) {
+        const nodeIdx = nodeIndices[0];
+        const node = json.nodes?.[nodeIdx];
+        transformLog.push(
+          `✓ Mesh ${meshIdx} (Node ${nodeIdx}): applying transform ` +
+          `[T: ${node?.translation || [0,0,0]}, R: ${node?.rotation || [0,0,0,1]}, S: ${node?.scale || [1,1,1]}]`
+        );
+        pos = applyMatrixToPositions(pos, matrices[0]);
+      } else {
+        transformLog.push(`✗ Mesh ${meshIdx}: NO TRANSFORM FOUND`);
+      }
+
       positions.push(pos);
       totalPositions += pos.length;
 
       // Read normals if available
       if (prim.attributes?.NORMAL !== undefined) {
-        const norm = readFloats(binData, accessors[prim.attributes.NORMAL], bufferViews);
+        let norm = readFloats(binData, accessors[prim.attributes.NORMAL], bufferViews);
+        // Apply normal transformation (rotation only, no translation/scale)
+        if (matrices.length > 0) {
+          norm = applyMatrixToNormals(norm, matrices[0]);
+        }
         normals.push(norm);
       }
 
@@ -120,6 +450,7 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
           Math.max(0, Math.min(1, baseColorFactor[1] ?? 1)),
           Math.max(0, Math.min(1, baseColorFactor[2] ?? 1)),
         ];
+        console.log(`[Color] Mesh ${meshIdx} Prim ${prim}: baseColorFactor = [${baseColor}]`);
       }
       // Fallback: try direct color property
       else if (material?.color) {
@@ -128,6 +459,7 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
           Math.max(0, Math.min(1, material.color[1] ?? 1)),
           Math.max(0, Math.min(1, material.color[2] ?? 1)),
         ];
+        console.log(`[Color] Mesh ${meshIdx} Prim ${prim}: material.color = [${baseColor}]`);
       }
       // Fallback: try emissive color if available
       else if (material?.emissiveFactor) {
@@ -136,6 +468,9 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
           Math.max(0, Math.min(1, material.emissiveFactor[1] ?? 1)),
           Math.max(0, Math.min(1, material.emissiveFactor[2] ?? 1)),
         ];
+        console.log(`[Color] Mesh ${meshIdx} Prim ${prim}: emissiveFactor = [${baseColor}]`);
+      } else {
+        console.log(`[Color] Mesh ${meshIdx} Prim ${prim}: No material color found, using [1,1,1]`);
       }
 
       // Read vertex colors if available
@@ -144,6 +479,9 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
         const componentCount = accessors[prim.attributes.COLOR_0].type === 'VEC4' ? 4 : 3;
         const baked = new Float32Array(Math.floor(col.length / componentCount) * 3);
 
+        console.log(`[Color] Mesh ${meshIdx} Prim ${prim}: Has vertex colors (${baked.length / 3} vertices)`);
+        console.log(`[Color] Sample raw vertex colors: [${col[0]?.toFixed(2)}, ${col[1]?.toFixed(2)}, ${col[2]?.toFixed(2)}]`);
+
         // Extract RGB and ignore alpha
         for (let i = 0; i < baked.length; i += 3) {
           const srcIdx = i / 3 * componentCount;
@@ -151,21 +489,76 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
           baked[i + 1] = (col[srcIdx + 1] ?? 1) * baseColor[1];
           baked[i + 2] = (col[srcIdx + 2] ?? 1) * baseColor[2];
         }
+        console.log(`[Color] Sample baked colors: [${baked[0]?.toFixed(2)}, ${baked[1]?.toFixed(2)}, ${baked[2]?.toFixed(2)}]`);
         colors.push(baked);
-      } else {
-        // No vertex colors - use material color for all vertices
+      }
+      // Check for texture-based colors
+      else if (material?.pbrMetallicRoughness?.baseColorTexture && prim.attributes?.TEXCOORD_0 !== undefined) {
+        const textureIdx = material.pbrMetallicRoughness.baseColorTexture.index;
+        const imageIdx = json.textures?.[textureIdx]?.source;
+
+        console.log(`[Texture] Sampling texture ${textureIdx} (image ${imageIdx}) using TEXCOORD_0`);
+
+        if (imageIdx !== undefined) {
+          const imageData = await loadImageFromGLB(json, binData, imageIdx);
+          if (imageData) {
+            const uvs = readFloats(binData, accessors[prim.attributes.TEXCOORD_0], bufferViews);
+            const vertexCount = Math.floor(uvs.length / 2);
+            const baked = new Float32Array(vertexCount * 3);
+
+            console.log(`[Texture] Loaded image ${imageIdx}, UV count: ${vertexCount}`);
+
+            // Sample texture at each vertex's UV coordinates
+            for (let i = 0; i < vertexCount; i++) {
+              const u = uvs[i * 2];
+              const v = uvs[i * 2 + 1];
+              const [r, g, b] = sampleTexture(imageData, u, v, i);
+              baked[i * 3] = r * baseColor[0];
+              baked[i * 3 + 1] = g * baseColor[1];
+              baked[i * 3 + 2] = b * baseColor[2];
+            }
+
+            console.log(`[Texture] Sampled ${vertexCount} vertices from texture, sample: [${baked[0]?.toFixed(2)}, ${baked[1]?.toFixed(2)}, ${baked[2]?.toFixed(2)}]`);
+            colors.push(baked);
+          } else {
+            console.warn(`[Texture] Failed to load image, using material color`);
+            const baked = new Float32Array(pos.length);
+            for (let i = 0; i < baked.length; i += 3) {
+              baked[i] = baseColor[0];
+              baked[i + 1] = baseColor[1];
+              baked[i + 2] = baseColor[2];
+            }
+            colors.push(baked);
+          }
+        } else {
+          console.warn(`[Texture] Texture referenced but image index not found`);
+          const baked = new Float32Array(pos.length);
+          for (let i = 0; i < baked.length; i += 3) {
+            baked[i] = baseColor[0];
+            baked[i + 1] = baseColor[1];
+            baked[i + 2] = baseColor[2];
+          }
+          colors.push(baked);
+        }
+      }
+      // No vertex colors - use material color for all vertices
+      else {
         const baked = new Float32Array(pos.length);
         for (let i = 0; i < baked.length; i += 3) {
           baked[i] = baseColor[0];
           baked[i + 1] = baseColor[1];
           baked[i + 2] = baseColor[2];
         }
+        console.log(`[Color] Mesh ${meshIdx} Prim ${prim}: No vertex/texture colors, using material color for all ${baked.length / 3} vertices`);
         colors.push(baked);
       }
 
       // Read indices or create sequential ones
       if (prim.indices !== undefined) {
-        const idx = readIndices(binData, accessors[prim.indices], bufferViews);
+        const idxAccessor = accessors[prim.indices];
+        console.log(`[GLB Parser] Reading indices: accessor count=${idxAccessor.count}, componentType=${idxAccessor.componentType}, bufferView=${idxAccessor.bufferView}`);
+        const idx = readIndices(binData, idxAccessor, bufferViews);
+        console.log(`[GLB Parser] Read ${idx.length} indices`);
         indices.push(idx);
       } else {
         // Create sequential indices for non-indexed primitive
@@ -179,6 +572,8 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
   }
 
   if (totalPositions === 0) return geo;
+
+  console.log(`[Color] Merge stage: positions=${positions.length}, colors=${colors.length}, normals=${normals.length}`);
 
   // Merge all position data
   const mergedPositions = new Float32Array(totalPositions);
@@ -204,17 +599,26 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
   }
 
   // Merge all color data if present
-  if (colors.length === positions.length) {
-    const mergedColors = new Float32Array(totalPositions);
-    let offset = 0;
-    for (let i = 0; i < colors.length; i++) {
-      const col = colors[i];
-      if (col && col.length > 0) {
-        mergedColors.set(col, offset);
+  if (colors.length > 0) {
+    if (colors.length === positions.length) {
+      console.log(`[Color] ✓ Merging colors (length match: ${colors.length} == ${positions.length})`);
+      const mergedColors = new Float32Array(totalPositions);
+      let offset = 0;
+      for (let i = 0; i < colors.length; i++) {
+        const col = colors[i];
+        if (col && col.length > 0) {
+          mergedColors.set(col, offset);
+        }
+        offset += positions[i].length;
       }
-      offset += positions[i].length;
+      console.log(`[Color] Sample merged colors: [${mergedColors[0]?.toFixed(2)}, ${mergedColors[1]?.toFixed(2)}, ${mergedColors[2]?.toFixed(2)}]`);
+      geo.setAttribute('color', new THREE.BufferAttribute(mergedColors, 3));
+      console.log(`[Color] ✓ Color attribute set on geometry`);
+    } else {
+      console.warn(`[Color] ✗ Colors.length (${colors.length}) !== positions.length (${positions.length}) - COLORS NOT MERGED!`);
     }
-    geo.setAttribute('color', new THREE.BufferAttribute(mergedColors, 3));
+  } else {
+    console.log(`[Color] No colors to merge`);
   }
 
   // Merge and offset indices
@@ -237,7 +641,125 @@ function parseGLTFMesh(json: any, binData: Uint8Array): THREE.BufferGeometry {
   geo.setIndex(new THREE.BufferAttribute(mergedIndices, 1));
 
   if (!geo.getAttribute('normal')) geo.computeVertexNormals();
+
+  // Log transform application
+  if (transformLog.length > 0) {
+    console.log('=== GLB TRANSFORM APPLICATION ===');
+    transformLog.forEach(log => console.log(log));
+    console.log('================================');
+  }
+
   return geo;
+}
+
+function multiplyMatrices(a: number[], b: number[]): number[] {
+  const result = new Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        sum += a[i * 4 + k] * b[k * 4 + j];
+      }
+      result[i * 4 + j] = sum;
+    }
+  }
+  return result;
+}
+
+function buildNodeMatrix(node: any): number[] | null {
+  const m = new Array(16).fill(0);
+  m[0] = m[5] = m[10] = m[15] = 1;
+
+  const t = node.translation || [0, 0, 0];
+  const r = node.rotation || [0, 0, 0, 1];
+  const s = node.scale || [1, 1, 1];
+
+  // Build TRS matrix: translate × rotate × scale
+  const qx = r[0], qy = r[1], qz = r[2], qw = r[3];
+  const xx = qx * qx, yy = qy * qy, zz = qz * qz;
+  const xy = qx * qy, xz = qx * qz, yz = qy * qz;
+  const wx = qw * qx, wy = qw * qy, wz = qw * qz;
+
+  const rot = [
+    [1 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
+    [2 * (xy + wz), 1 - 2 * (xx + zz), 2 * (yz - wx)],
+    [2 * (xz - wy), 2 * (yz + wx), 1 - 2 * (xx + yy)],
+  ];
+
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      m[i * 4 + j] = rot[i][j] * s[j];
+    }
+  }
+
+  m[12] = t[0];
+  m[13] = t[1];
+  m[14] = t[2];
+
+  return m;
+}
+
+function applyMatrixToPositions(positions: Float32Array, matrix: number[]): Float32Array {
+  const result = new Float32Array(positions.length);
+  const m = matrix;
+
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const z = positions[i + 2];
+
+    result[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+    result[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+    result[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+  }
+
+  return result;
+}
+
+function applyMatrixToNormals(normals: Float32Array, matrix: number[]): Float32Array {
+  const result = new Float32Array(normals.length);
+  const m = matrix;
+
+  // Inverse transpose of rotation/scale part (3x3 submatrix)
+  const m00 = m[0], m01 = m[4], m02 = m[8];
+  const m10 = m[1], m11 = m[5], m12 = m[9];
+  const m20 = m[2], m21 = m[6], m22 = m[10];
+
+  // Compute inverse transpose (simplified for TRS matrices)
+  const det = m00 * (m11 * m22 - m12 * m21)
+            - m01 * (m10 * m22 - m12 * m20)
+            + m02 * (m10 * m21 - m11 * m20);
+
+  const invDet = Math.abs(det) < 1e-10 ? 1 : 1 / det;
+
+  const inv = [
+    (m11 * m22 - m12 * m21) * invDet,
+    (m02 * m21 - m01 * m22) * invDet,
+    (m01 * m12 - m02 * m11) * invDet,
+    (m12 * m20 - m10 * m22) * invDet,
+    (m00 * m22 - m02 * m20) * invDet,
+    (m02 * m10 - m00 * m12) * invDet,
+    (m10 * m21 - m11 * m20) * invDet,
+    (m01 * m20 - m00 * m21) * invDet,
+    (m00 * m11 - m01 * m10) * invDet,
+  ];
+
+  for (let i = 0; i < normals.length; i += 3) {
+    const x = normals[i];
+    const y = normals[i + 1];
+    const z = normals[i + 2];
+
+    result[i] = inv[0] * x + inv[3] * y + inv[6] * z;
+    result[i + 1] = inv[1] * x + inv[4] * y + inv[7] * z;
+    result[i + 2] = inv[2] * x + inv[5] * y + inv[8] * z;
+
+    const nl = Math.sqrt(result[i] ** 2 + result[i + 1] ** 2 + result[i + 2] ** 2) || 1;
+    result[i] /= nl;
+    result[i + 1] /= nl;
+    result[i + 2] /= nl;
+  }
+
+  return result;
 }
 
 /**
@@ -252,7 +774,7 @@ function readFloats(binData: Uint8Array, accessor: any, bufferViews: any[]): Flo
   const components = ({ SCALAR:1, VEC2:2, VEC3:3, VEC4:4 } as Record<string,number>)[accessor.type] ?? 1;
   const count      = accessor.count;
   const out        = new Float32Array(count * components);
-  const elemBytes  = accessor.componentType === 5123 ? 2 : 4;
+  const elemBytes  = getComponentTypeSize(accessor.componentType);
   const effectiveStride = stride || components * elemBytes;
   const baseOffset = bvOffset + accOffset;
 
@@ -262,8 +784,21 @@ function readFloats(binData: Uint8Array, accessor: any, bufferViews: any[]): Flo
     return out;
   }
 
+  // Use bufferView.byteLength if available, otherwise use remaining bytes from base
+  const bvByteLength = bv.byteLength ?? (binData.byteLength - bvOffset);
+  const accessorByteSize = Math.max(
+    (count - 1) * effectiveStride + components * elemBytes,
+    0
+  );
+
+  if (accOffset + accessorByteSize > bvByteLength) {
+    console.warn(
+      `readFloats: accessor exceeds bufferView bounds (byteOffset: ${accOffset}, size: ${accessorByteSize}, bufferView.byteLength: ${bvByteLength})`
+    );
+  }
+
   // Create a new DataView that is scoped to the remaining data
-  const remainingBytes = binData.byteLength - baseOffset;
+  const remainingBytes = Math.min(bvByteLength - accOffset, binData.byteLength - baseOffset);
   const dv = new DataView(binData.buffer, binData.byteOffset + baseOffset, remainingBytes);
 
   for (let i = 0; i < count; i++) {
@@ -272,7 +807,6 @@ function readFloats(binData: Uint8Array, accessor: any, bufferViews: any[]): Flo
       // Check bounds before reading
       const requiredBytes = elemBytes;
       if (pos + requiredBytes > remainingBytes) {
-        console.warn(`readFloats: reading at ${pos} + ${requiredBytes} exceeds remaining ${remainingBytes}`);
         out[i * components + j] = 0;
         continue;
       }
@@ -283,6 +817,10 @@ function readFloats(binData: Uint8Array, accessor: any, bufferViews: any[]): Flo
         out[i * components + j] = dv.getUint32(pos, true);
       } else if (accessor.componentType === 5123) {   // UNSIGNED_SHORT
         out[i * components + j] = dv.getUint16(pos, true);
+      } else if (accessor.componentType === 5121) {   // UNSIGNED_BYTE
+        out[i * components + j] = dv.getUint8(pos) / 255;
+      } else if (accessor.componentType === 5120) {   // BYTE
+        out[i * components + j] = Math.max(-1, dv.getInt8(pos) / 127);
       }
     }
   }
@@ -290,11 +828,13 @@ function readFloats(binData: Uint8Array, accessor: any, bufferViews: any[]): Flo
 }
 
 function readIndices(binData: Uint8Array, accessor: any, bufferViews: any[]): Uint32Array {
-  const bv   = bufferViews[accessor.bufferView];
-  const base = (bv.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
-  const n    = accessor.count;
-  const out  = new Uint32Array(n);
-  const elemSize = accessor.componentType === 5125 ? 4 : 2;
+  const bv         = bufferViews[accessor.bufferView];
+  const bvOffset   = bv.byteOffset ?? 0;
+  const accOffset  = accessor.byteOffset ?? 0;
+  const base       = bvOffset + accOffset;
+  const n          = accessor.count;
+  const out        = new Uint32Array(n);
+  const elemSize   = getComponentTypeSize(accessor.componentType);
 
   // Ensure we don't exceed buffer bounds
   if (base >= binData.byteLength) {
@@ -302,21 +842,51 @@ function readIndices(binData: Uint8Array, accessor: any, bufferViews: any[]): Ui
     return out;
   }
 
-  const remainingBytes = binData.byteLength - base;
+  // Use bufferView.byteLength if available, otherwise use remaining bytes from buffer start
+  const bvByteLength = bv.byteLength ?? (binData.byteLength - bvOffset);
+  const requiredSize = n * elemSize;
+
+  if (accOffset + requiredSize > bvByteLength) {
+    const shortage = accOffset + requiredSize - bvByteLength;
+    console.warn(
+      `readIndices: accessor exceeds bufferView bounds (count: ${n}, elemSize: ${elemSize}, required: ${requiredSize}, byteOffset: ${accOffset}, bufferView.byteLength: ${bvByteLength}, shortage: ${shortage} bytes)`
+    );
+  }
+
+  // Take the minimum of available bytes in bufferView and remaining buffer space
+  const remainingBytes = Math.min(bvByteLength - accOffset, binData.byteLength - base);
   const dv = new DataView(binData.buffer, binData.byteOffset + base, remainingBytes);
 
+  let successCount = 0;
   for (let i = 0; i < n; i++) {
     const pos = i * elemSize;
     // Check bounds before reading
     if (pos + elemSize > remainingBytes) {
-      console.warn(`readIndices: reading at ${pos} + ${elemSize} exceeds remaining ${remainingBytes}`);
       out[i] = 0;
       continue;
     }
-    out[i] = accessor.componentType === 5125
-      ? dv.getUint32(pos, true)
-      : dv.getUint16(pos, true);
+    successCount++;
+
+    // Read based on component type
+    if (accessor.componentType === 5125) {        // UNSIGNED_INT
+      out[i] = dv.getUint32(pos, true);
+    } else if (accessor.componentType === 5123) { // UNSIGNED_SHORT
+      out[i] = dv.getUint16(pos, true);
+    } else if (accessor.componentType === 5121) { // UNSIGNED_BYTE
+      out[i] = dv.getUint8(pos);
+    } else if (accessor.componentType === 5120) { // BYTE (sign-extend)
+      out[i] = dv.getInt8(pos);
+    } else {
+      out[i] = dv.getUint16(pos, true); // fallback to UNSIGNED_SHORT
+    }
   }
+
+  if (successCount < n) {
+    console.warn(
+      `readIndices: read ${successCount}/${n} indices (${n - successCount} failed due to buffer bounds)`
+    );
+  }
+
   return out;
 }
 

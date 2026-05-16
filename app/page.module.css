@@ -753,4 +753,116 @@
   .hud {
     display: none;
   }
+
+  .debugPanelContainer {
+    display: none;
+  }
+}
+
+/* ==========================================================
+   DEBUG PANEL
+   ========================================================== */
+.debugPanelContainer {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  max-height: 40vh;
+  z-index: 100;
+  font-size: 12px;
+}
+
+.debugDetails {
+  background: rgba(10, 10, 10, 0.95);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 8px;
+  padding: 0;
+  backdrop-filter: blur(8px);
+}
+
+.debugDetails[open] {
+  border-color: rgba(0, 212, 255, 0.6);
+}
+
+.debugSummary {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 500;
+  color: #00d4ff;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.debugSummary:hover {
+  background: rgba(0, 212, 255, 0.05);
+}
+
+.debugContent {
+  max-height: 35vh;
+  overflow-y: auto;
+  border-top: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+/* ==========================================================
+   COLOR DISPLAY — Surface color from GLB materials
+   ========================================================== */
+.colorDisplay {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(128, 255, 0, 0.2);
+  border-radius: 4px;
+}
+
+.colorLabel {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.colorValue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.colorSwatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.colorSwatch:hover {
+  border-color: rgba(128, 255, 0, 0.8);
+}
+
+.colorValue span {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #80ff00;
+  flex: 1;
+}
+
+[data-theme='light'] .colorDisplay {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: #ddd;
+}
+
+[data-theme='light'] .colorLabel {
+  color: #666;
+}
+
+[data-theme='light'] .colorValue span {
+  color: #0066cc;
+}
+
+[data-theme='light'] .colorSwatch {
+  border-color: rgba(0, 0, 0, 0.1);
 }
