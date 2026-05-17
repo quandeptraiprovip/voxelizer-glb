@@ -1,4 +1,4 @@
-import { buildTriangleGrid, clampVoxelGrid, queryTriangleGrid, type TriangleGrid } from './triangle-grid';
+import { clampVoxelGrid, type TriangleGrid } from './triangle-grid';
 import {
   inscribedCubeHalfEdge,
   orientationForSurface,
@@ -204,13 +204,107 @@ function rayHitZ(ox: number, oy: number,
   return az + u*(bz-az) + v*(cz-az);
 }
 
-// ─── SCAN-LINE INTERIOR FILL ──────────────────────────────────────────────────
+// ─── FLOOD-FILL INTERIOR DETECTION (Topology-based, works with non-watertight meshes) ──
 
 /**
- * Build a complete inside/outside classification grid using scan-line filling.
+ * Build inside/outside classification using flood-fill from boundary.
+ * Works reliably for non-watertight meshes by using connectivity analysis.
+ * BFS from grid edges to mark all "outside" empty cells.
+ * Remaining empty cells = "inside".
+ */
+function buildFloodFillInside(
+  gridX: number,
+  gridY: number,
+  gridZ: number,
+  grid: Uint8Array  // 0=empty, 1=surface (don't modify, use for reference)
+): Uint8Array {
+  const cellCount = gridX * gridY * gridZ;
+  const visited = new Uint8Array(cellCount);
+  const insideGrid = new Uint8Array(cellCount); // 0=outside, 1=inside
+  const queue: number[] = [];
+
+  // Helper: linear index to (gx, gy, gz)
+  const unpack = (idx: number) => {
+    const gz = Math.floor(idx / (gridY * gridX));
+    const rem = idx % (gridY * gridX);
+    const gy = Math.floor(rem / gridX);
+    const gx = rem % gridX;
+    return { gx, gy, gz };
+  };
+
+  // Helper: (gx, gy, gz) to linear index
+  const pack = (gx: number, gy: number, gz: number) =>
+    gz * gridY * gridX + gy * gridX + gx;
+
+  // Add all boundary cells (edges of grid) to queue
+  // These are definitely "outside"
+  for (let gz = 0; gz < gridZ; gz++) {
+    for (let gy = 0; gy < gridY; gy++) {
+      for (let gx = 0; gx < gridX; gx++) {
+        // Check if on boundary
+        const onBoundary = (gx === 0 || gx === gridX - 1 ||
+                           gy === 0 || gy === gridY - 1 ||
+                           gz === 0 || gz === gridZ - 1);
+        if (onBoundary) {
+          const idx = pack(gx, gy, gz);
+          if (grid[idx] === 0) { // Only add empty boundary cells
+            visited[idx] = 1;
+            queue.push(idx);
+          }
+        }
+      }
+    }
+  }
+
+  // BFS: flood-fill from boundary through empty cells
+  let head = 0;
+  const dx = [1, -1, 0, 0, 0, 0];
+  const dy = [0, 0, 1, -1, 0, 0];
+  const dz = [0, 0, 0, 0, 1, -1];
+
+  while (head < queue.length) {
+    const idx = queue[head++];
+    const { gx, gy, gz } = unpack(idx);
+
+    // Check 6 neighbors
+    for (let d = 0; d < 6; d++) {
+      const ngx = gx + dx[d];
+      const ngy = gy + dy[d];
+      const ngz = gz + dz[d];
+
+      // Bounds check
+      if (ngx < 0 || ngx >= gridX || ngy < 0 || ngy >= gridY || ngz < 0 || ngz >= gridZ) {
+        continue;
+      }
+
+      const nidx = pack(ngx, ngy, ngz);
+      if (visited[nidx]) continue;
+      if (grid[nidx] !== 0) continue; // Only traverse empty cells
+
+      visited[nidx] = 1;
+      queue.push(nidx);
+    }
+  }
+
+  // Mark unreachable empty cells as "inside"
+  for (let idx = 0; idx < cellCount; idx++) {
+    if (grid[idx] === 0 && !visited[idx]) {
+      insideGrid[idx] = 1;
+    }
+  }
+
+  return insideGrid;
+}
+
+// ─── DEPRECATED: SCAN-LINE INTERIOR FILL (Kept for reference, replaced by flood-fill) ──────────────
+
+/**
+ * [DEPRECATED] Build a complete inside/outside classification grid using scan-line filling.
  * For each axis direction, iterate all triangles and collect ray intersections.
  * Uses parity rule: odd number of intersections = inside.
  * Returns majority vote across 3 axes (≥2 = inside).
+ *
+ * NOTE: Replaced by buildFloodFillInside() for better non-watertight mesh support.
  */
 function buildScanLineInside(
   triPos: Float32Array,
@@ -460,7 +554,8 @@ function voxelize(
   const cellBestDistSq = new Float32Array(cellCount);
   cellBestDistSq.fill(1e30);
 
-  const triGrid = buildTriangleGrid(triPos, triCount, bbox.min, bbox.max, voxelSize);
+  // Note: triGrid is no longer used (raycasting replaced with flood-fill)
+  // const triGrid = buildTriangleGrid(triPos, triCount, bbox.min, bbox.max, voxelSize);
 
   const reportProgress = (p: number) => {
     onProgress?.(Math.max(0, Math.min(100, p)));
@@ -471,7 +566,6 @@ function voxelize(
   // Increased band to catch more surface details on curved meshes (still one cell thick shell)
   const surfaceBand = interior ? 1.0 : 0.65;
   const THRESH_SQ = (voxelSize * surfaceBand) * (voxelSize * surfaceBand);
-  const outwardMargin = voxelSize * 0.12;
 
   if (surface) {
     for (let ti = 0; ti < triCount; ti++) {
@@ -544,20 +638,22 @@ function voxelize(
 
   }
 
-  // ── Build scan-line inside/outside grid ──────────────────────────────────────
-  // Use 0 PERTURB for symmetric voxelization (no bias toward any direction)
-  const PERTURB = 0;
-  const insideGrid = buildScanLineInside(triPos, triCount, triGrid, bbox, gridX, gridY, gridZ, voxelSize, PERTURB, gridOffset);
+  // ── Build flood-fill inside/outside grid (topology-based, works with non-watertight) ───
+  const insideGrid = buildFloodFillInside(gridX, gridY, gridZ, grid);
   reportProgress(50);
 
-  // ── Inner-shell removal: for surface-only mode, remove voxels deep inside solid ─
-  if (surface) {
-    for (let idx = 0; idx < cellCount; idx++) {
-      if (grid[idx] === 1 && insideGrid[idx] === 1) {
-        grid[idx] = 0; // Remove inner surface layer
-      }
-    }
-  }
+  // ── DISABLED: Inner-shell removal ───────────────────────────────────────────────────
+  // [REASON] Inner-shell removal was deleting legitimate surface voxels on non-watertight
+  // meshes because raycasting-based insideGrid was unreliable. With topology-based
+  // flood-fill, this step is no longer needed and would cause data loss.
+  // Surface voxels (grid[idx] === 1) must be preserved in all cases.
+  // if (surface) {
+  //   for (let idx = 0; idx < cellCount; idx++) {
+  //     if (grid[idx] === 1 && insideGrid[idx] === 1) {
+  //       grid[idx] = 0;
+  //     }
+  //   }
+  // }
   reportProgress(60);
 
   // ── STEP 2: Interior fill via scan-line result ───────────────────────────────
@@ -569,6 +665,55 @@ function voxelize(
     }
   }
   reportProgress(70);
+
+  // ── Surface layer filtering: keep only outermost surface layer ────────────────
+  // Remove surface voxels not adjacent to empty cells (interior surface layers)
+  if (surface) {
+    const dx = [1, -1, 0, 0, 0, 0];
+    const dy = [0, 0, 1, -1, 0, 0];
+    const dz = [0, 0, 0, 0, 1, -1];
+    const toRemove: number[] = [];
+
+    for (let gz = 0; gz < gridZ; gz++) {
+      for (let gy = 0; gy < gridY; gy++) {
+        for (let gx = 0; gx < gridX; gx++) {
+          const idx = gz * gridY * gridX + gy * gridX + gx;
+          if (grid[idx] !== 1) continue; // Only check surface voxels
+
+          // Check if adjacent to empty cell
+          let adjacentToEmpty = false;
+          for (let d = 0; d < 6; d++) {
+            const ngx = gx + dx[d];
+            const ngy = gy + dy[d];
+            const ngz = gz + dz[d];
+
+            // Empty cells outside grid or truly empty
+            if (ngx < 0 || ngx >= gridX || ngy < 0 || ngy >= gridY || ngz < 0 || ngz >= gridZ) {
+              adjacentToEmpty = true;
+              break;
+            }
+
+            const nidx = ngz * gridY * gridX + ngy * gridX + ngx;
+            if (grid[nidx] === 0) {
+              adjacentToEmpty = true;
+              break;
+            }
+          }
+
+          // Mark for removal if not adjacent to empty
+          if (!adjacentToEmpty) {
+            toRemove.push(idx);
+          }
+        }
+      }
+    }
+
+    // Remove internal surface layers
+    for (const idx of toRemove) {
+      grid[idx] = 0;
+    }
+  }
+  reportProgress(72);
 
   // ── Gap-fill: close small holes with morphological closing ──────────────────
   if (interior) {
