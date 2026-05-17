@@ -69,14 +69,14 @@
   align-items: center;
   gap: 18px;
   border-radius: var(--radius-pill);
-  background: var(--thin-bg);
-  -webkit-backdrop-filter: blur(var(--thin-blur)) saturate(var(--thin-saturate));
-  backdrop-filter: blur(var(--thin-blur)) saturate(var(--thin-saturate));
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
-    var(--thin-shadow),
-    inset 0 1px 0 0 var(--thin-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.03);
   z-index: 50;
   overflow: hidden;
 }
@@ -151,7 +151,7 @@
   align-items: center;
   gap: 4px;
   padding: 4px;
-  background: rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-pill);
   font-size: 12px;
 }
@@ -161,19 +161,20 @@
   z-index: 1;
   padding: 6px 14px;
   border-radius: var(--radius-pill);
-  color: var(--ink-dim);
+  color: var(--ink-on-glass-mute);
   cursor: default;
   letter-spacing: 0;
   white-space: nowrap;
+  transition: all 0.18s var(--ease);
 }
 
 .crumbActive {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.12);
   color: var(--ink-on-glass);
   font-weight: 500;
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
-    0 2px 4px rgba(0, 0, 0, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .spacer {
@@ -184,8 +185,8 @@
 
 .themeToggle {
   position: relative;
-  background: var(--thin-bg);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-pill);
   width: 40px;
   height: 40px;
@@ -195,13 +196,12 @@
   cursor: pointer;
   font-size: 18px;
   transition:
-    transform var(--duration-fast) var(--spring-bounce),
-    box-shadow var(--duration-mid) var(--spring-smooth),
-    background-color var(--duration-mid) var(--ease);
+    transform 0.18s var(--ease),
+    background-color 0.24s var(--ease),
+    box-shadow 0.24s var(--ease);
   box-shadow:
-    var(--thin-shadow),
-    inset 0 1px 0 0 var(--thin-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+    0 1px 3px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   overflow: hidden;
 }
 
@@ -213,24 +213,20 @@
   border-radius: inherit;
   background:
     linear-gradient(135deg,
-      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.12) 0%,
       rgba(255, 255, 255, 0) 38%,
       rgba(255, 255, 255, 0) 62%,
-      rgba(255, 255, 255, 0.08) 100%);
+      rgba(255, 255, 255, 0.04) 100%);
   pointer-events: none;
   z-index: 0;
   mix-blend-mode: overlay;
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
 .themeToggle:hover {
-  background: var(--thin-bg-hover);
-  border-color: var(--thin-border);
-  box-shadow:
-    var(--reg-shadow),
-    inset 0 1px 0 0 var(--thin-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06);
-  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
 }
 
 .themeToggle:active {
@@ -253,8 +249,8 @@
   align-items: center;
   gap: 8px;
   padding: 5px 12px;
-  background: rgba(0, 0, 0, 0.12);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-pill);
 }
 
@@ -307,14 +303,14 @@
 .sidebar {
   position: relative;
   border-radius: var(--radius-sheet);
-  background: var(--thick-bg);
-  -webkit-backdrop-filter: blur(var(--thick-blur)) saturate(var(--thick-saturate));
-  backdrop-filter: blur(var(--thick-blur)) saturate(var(--thick-saturate));
-  border: 1px solid var(--thick-border);
+  background: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
-    var(--thick-shadow),
-    inset 0 1px 0 0 var(--thick-shine),
-    inset 0 -1.5px 0 0 rgba(255, 255, 255, 0.1);
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -329,14 +325,14 @@
   border-radius: inherit;
   background:
     linear-gradient(135deg,
-      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.12) 0%,
       rgba(255, 255, 255, 0) 38%,
       rgba(255, 255, 255, 0) 62%,
-      rgba(255, 255, 255, 0.08) 100%);
+      rgba(255, 255, 255, 0.06) 100%);
   pointer-events: none;
   z-index: 0;
   mix-blend-mode: overlay;
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
 /* Rim highlight */
@@ -363,7 +359,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid var(--thick-border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .sidebarTitle {
@@ -387,7 +383,7 @@
   position: relative;
   z-index: 1;
   padding: 16px 22px;
-  border-bottom: 1px solid var(--thick-border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .section:last-child {
@@ -406,18 +402,18 @@
 /* ----- File upload (dropzone-style) ----- */
 .dropzone {
   position: relative;
-  border: 2px dashed var(--thin-border);
+  border: 2px dashed rgba(255, 255, 255, 0.15);
   padding: 22px 16px;
   border-radius: var(--radius-panel);
   text-align: center;
-  background: var(--thin-bg);
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.22s var(--ease);
 }
 
 .dropzone:hover {
-  border-color: var(--amber);
-  background: rgba(255, 208, 122, 0.15);
+  border-color: rgba(255, 208, 122, 0.5);
+  background: rgba(255, 208, 122, 0.08);
 }
 
 .dropzoneIcon {
@@ -453,8 +449,8 @@
 
 .dropzoneTypes span {
   padding: 3px 10px;
-  background: var(--thin-bg);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 208, 122, 0.2);
   border-radius: var(--radius-pill);
   font-size: 10px;
   color: var(--amber);
@@ -475,8 +471,8 @@
   gap: 8px;
   margin-top: 12px;
   padding: 10px 14px;
-  background: var(--thin-bg);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 208, 122, 0.2);
   border-radius: var(--radius-button);
   font-size: 12px;
   color: var(--amber);
@@ -499,8 +495,8 @@
 .previewWrap {
   border-radius: var(--radius-button);
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   height: 160px;
 }
 
@@ -510,9 +506,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-button);
-  border: 1px solid var(--thin-border);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--ink-dim);
   font-size: 12px;
 }
@@ -551,11 +547,11 @@
   width: 100%;
   height: 4px;
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.30);
+  background: rgba(255, 255, 255, 0.12);
   outline: none;
   -webkit-appearance: none;
   appearance: none;
-  border: 1px solid var(--thin-border);
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .slider input[type="range"]::-webkit-slider-thumb {
@@ -592,12 +588,12 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  background: var(--thin-bg);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   margin-bottom: 8px;
   cursor: pointer;
-  transition: all var(--duration-fast) var(--spring-smooth);
+  transition: all 0.18s var(--ease);
   overflow: hidden;
 }
 
@@ -609,14 +605,14 @@
   border-radius: inherit;
   background:
     linear-gradient(135deg,
-      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.1) 0%,
       rgba(255, 255, 255, 0) 38%,
       rgba(255, 255, 255, 0) 62%,
-      rgba(255, 255, 255, 0.08) 100%);
+      rgba(255, 255, 255, 0.04) 100%);
   pointer-events: none;
   z-index: 0;
   mix-blend-mode: overlay;
-  opacity: 0.9;
+  opacity: 0.7;
 }
 
 .checkbox:last-child {
@@ -624,8 +620,8 @@
 }
 
 .checkbox:hover {
-  background: var(--thin-bg-hover);
-  border-color: var(--thin-border);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .checkbox input[type="checkbox"] {
@@ -671,10 +667,10 @@
   justify-content: center;
   gap: 8px;
   padding: 12px 22px;
-  background: var(--reg-bg);
-  -webkit-backdrop-filter: blur(var(--reg-blur)) saturate(var(--reg-saturate));
-  backdrop-filter: blur(var(--reg-blur)) saturate(var(--reg-saturate));
-  border: 1px solid var(--reg-border);
+  background: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: var(--radius-pill);
   color: var(--ink-on-glass);
   font-family: var(--font-body);
@@ -683,14 +679,14 @@
   letter-spacing: -0.005em;
   cursor: pointer;
   transition:
-    transform var(--duration-fast) var(--spring-bounce),
-    background-color var(--duration-mid) var(--ease),
-    box-shadow var(--duration-mid) var(--ease),
-    border-color var(--duration-mid) var(--ease);
+    transform 0.18s var(--ease),
+    background-color 0.24s var(--ease),
+    box-shadow 0.24s var(--ease),
+    border-color 0.24s var(--ease);
   box-shadow:
-    var(--reg-shadow),
-    inset 0 1px 0 0 var(--reg-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06);
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
   overflow: hidden;
 }
 
@@ -702,14 +698,14 @@
   border-radius: inherit;
   background:
     linear-gradient(135deg,
-      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.12) 0%,
       rgba(255, 255, 255, 0) 38%,
       rgba(255, 255, 255, 0) 62%,
-      rgba(255, 255, 255, 0.08) 100%);
+      rgba(255, 255, 255, 0.04) 100%);
   pointer-events: none;
   z-index: 0;
   mix-blend-mode: overlay;
-  opacity: 0.9;
+  opacity: 0.7;
 }
 
 .btn::after {
@@ -719,23 +715,22 @@
   left: 15%;
   right: 15%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
   z-index: 2;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--reg-bg-hover);
-  border-color: var(--reg-border);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
   box-shadow:
-    var(--reg-shadow),
-    inset 0 1px 0 0 var(--reg-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06);
+    0 3px 12px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
   transform: translateY(-1px);
 }
 
 .btn:active:not(:disabled) {
   transform: translateY(0) scale(0.96);
-  transition-duration: 80ms;
+  transition-duration: 0.12s;
 }
 
 .btn:disabled {
@@ -778,8 +773,8 @@
   border-radius: var(--radius-button);
   font-size: 12px;
   margin-bottom: 8px;
-  border: 1px solid var(--thin-border);
-  background: var(--thin-bg);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .banner:last-child {
@@ -845,14 +840,14 @@
 .viewerPanel {
   position: relative;
   border-radius: var(--radius-sheet);
-  background: var(--reg-bg);
-  -webkit-backdrop-filter: blur(var(--reg-blur)) saturate(var(--reg-saturate));
-  backdrop-filter: blur(var(--reg-blur)) saturate(var(--reg-saturate));
-  border: 1px solid var(--reg-border);
+  background: rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow:
-    var(--reg-shadow),
-    inset 0 1px 0 0 var(--reg-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06);
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04);
   overflow: hidden;
   min-height: 0;
   min-width: 0;
@@ -866,14 +861,14 @@
   border-radius: inherit;
   background:
     linear-gradient(135deg,
-      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.12) 0%,
       rgba(255, 255, 255, 0) 38%,
       rgba(255, 255, 255, 0) 62%,
-      rgba(255, 255, 255, 0.08) 100%);
+      rgba(255, 255, 255, 0.06) 100%);
   pointer-events: none;
   z-index: 0;
   mix-blend-mode: overlay;
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
 /* Rim highlight */
@@ -946,14 +941,14 @@
   gap: 14px;
   padding: 10px 18px;
   border-radius: var(--radius-pill);
-  background: var(--thin-bg);
-  -webkit-backdrop-filter: blur(var(--thin-blur)) saturate(var(--thin-saturate));
-  backdrop-filter: blur(var(--thin-blur)) saturate(var(--thin-saturate));
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
-    var(--thin-shadow),
-    inset 0 1px 0 0 var(--thin-shine),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.02);
   font-size: 12px;
   color: var(--ink-on-glass-mute);
   z-index: 40;
@@ -969,14 +964,14 @@
   border-radius: inherit;
   background:
     linear-gradient(135deg,
-      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0.1) 0%,
       rgba(255, 255, 255, 0) 38%,
       rgba(255, 255, 255, 0) 62%,
-      rgba(255, 255, 255, 0.08) 100%);
+      rgba(255, 255, 255, 0.04) 100%);
   pointer-events: none;
   z-index: 0;
   mix-blend-mode: overlay;
-  opacity: 0.9;
+  opacity: 0.7;
 }
 
 .hud::after {
@@ -1006,8 +1001,8 @@
 .kbd {
   display: inline-block;
   padding: 1px 8px;
-  background: rgba(0, 0, 0, 0.12);
-  border: 1px solid var(--thin-border);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
   color: var(--ink-on-glass);
   font-family: var(--font-mono);
