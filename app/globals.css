@@ -118,8 +118,29 @@
 @media (prefers-color-scheme: dark) {
   :root {
     /* Midnight defaults already optimized in :root, this ensures override if needed */
-    --specular-light: var(--specular-dark);
   }
+}
+
+/* Data attribute dark theme — explicit dark mode toggle */
+[data-theme="dark"] {
+  --ink: #f8fafc;
+  --ink-on-glass: rgba(255, 255, 255, 0.94);
+  --ink-on-glass-mute: rgba(255, 255, 255, 0.65);
+  --ink-dim: rgba(255, 255, 255, 0.65);
+  --ink-mute: rgba(255, 255, 255, 0.45);
+  --ink-faint: rgba(255, 255, 255, 0.28);
+  --thin-shine: rgba(255, 255, 255, 0.4);
+  --reg-shine: rgba(255, 255, 255, 0.55);
+  --thick-shine: rgba(255, 255, 255, 0.7);
+  --amber: #ffc970;
+  --amber-soft: rgba(255, 201, 112, 0.18);
+  --amber-border: rgba(255, 201, 112, 0.40);
+  --cyan: #4fd4ff;
+  --cyan-soft: rgba(79, 212, 255, 0.18);
+  --violet: #9d6dff;
+  --rose: #ff6ba8;
+  --green: #4ade80;
+  --danger: #ff6b6b;
 }
 
 * {

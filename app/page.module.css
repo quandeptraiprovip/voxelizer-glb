@@ -8,12 +8,22 @@
   position: fixed;
   inset: 0;
   overflow: hidden;
+  /* Light theme by default */
   background:
     radial-gradient(ellipse 80% 60% at 50% 50%, rgba(20, 50, 100, 0.15), transparent 60%),
     radial-gradient(ellipse 50% 50% at 20% 30%, var(--aurora-a), transparent 60%),
     radial-gradient(ellipse 60% 50% at 80% 70%, var(--aurora-b), transparent 60%),
     radial-gradient(ellipse 50% 50% at 60% 20%, var(--aurora-c), transparent 70%),
     linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-darker) 100%);
+}
+
+/* Dark theme — Midnight */
+.container[data-theme="dark"] {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% 110%, #0066b3 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 80% 20%, #6a4af0 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 15% 25%, #1aa8cc 0%, transparent 55%),
+    linear-gradient(180deg, #020617 0%, #0b1d4a 60%, #013a6e 100%);
 }
 
 .container::before {
@@ -28,6 +38,10 @@
   mask-image: radial-gradient(ellipse 80% 70% at 50% 55%, black 30%, transparent 85%);
 }
 
+.container[data-theme="dark"]::before {
+  opacity: 0.3;
+}
+
 .container::after {
   /* corner vignette */
   content: "";
@@ -35,6 +49,10 @@
   inset: 0;
   pointer-events: none;
   background: radial-gradient(ellipse at 50% 55%, transparent 30%, rgba(0, 0, 0, 0.4) 100%);
+}
+
+.container[data-theme="dark"]::after {
+  background: radial-gradient(ellipse at 50% 55%, transparent 30%, rgba(0, 0, 0, 0.6) 100%);
 }
 
 /* ==========================================================
