@@ -1,0 +1,421 @@
+/* ============================================================
+   LIQUID GLASS — design tokens & primitives
+   "Trong veo, nhẹ nhàng, tinh tế"
+   ============================================================ */
+
+:root {
+  --glass-radius: 16px;
+  --glass-radius-sm: 10px;
+  --glass-radius-pill: 999px;
+
+  /* THIN — barely-there veil */
+  --thin-bg: rgba(255, 255, 255, 0.08);
+  --thin-bg-hover: rgba(255, 255, 255, 0.14);
+  --thin-blur: 12px;
+  --thin-saturate: 140%;
+  --thin-border: rgba(255, 255, 255, 0.22);
+  --thin-shine: rgba(255, 255, 255, 0.55);
+  --thin-shadow: 0 4px 18px rgba(15, 23, 42, 0.18);
+
+  /* REGULAR — the canonical liquid glass */
+  --reg-bg: rgba(255, 255, 255, 0.14);
+  --reg-bg-hover: rgba(255, 255, 255, 0.22);
+  --reg-blur: 22px;
+  --reg-saturate: 180%;
+  --reg-border: rgba(255, 255, 255, 0.32);
+  --reg-shine: rgba(255, 255, 255, 0.7);
+  --reg-shadow: 0 8px 32px rgba(15, 23, 42, 0.22);
+
+  /* THICK — frosted, denser, more obscuring */
+  --thick-bg: rgba(255, 255, 255, 0.24);
+  --thick-bg-hover: rgba(255, 255, 255, 0.32);
+  --thick-blur: 36px;
+  --thick-saturate: 200%;
+  --thick-border: rgba(255, 255, 255, 0.45);
+  --thick-shine: rgba(255, 255, 255, 0.85);
+  --thick-shadow: 0 14px 44px rgba(15, 23, 42, 0.28);
+
+  --ink: #0f172a;
+  --ink-on-glass: rgba(15, 23, 42, 0.86);
+  --ink-on-glass-mute: rgba(15, 23, 42, 0.55);
+
+  --accent: oklch(0.66 0.18 250);
+  --accent-soft: oklch(0.66 0.18 250 / 0.5);
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Dark wallpaper auto-flips ink */
+[data-bg="aurora"], [data-bg="midnight"] {
+  --ink: #f8fafc;
+  --ink-on-glass: rgba(255, 255, 255, 0.94);
+  --ink-on-glass-mute: rgba(255, 255, 255, 0.65);
+  --thin-shine: rgba(255, 255, 255, 0.4);
+  --reg-shine: rgba(255, 255, 255, 0.55);
+  --thick-shine: rgba(255, 255, 255, 0.7);
+}
+
+/* ============================================================
+   The glass primitive
+   .glass = base. Add .thin / .reg / .thick.
+   ============================================================ */
+
+.glass {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--glass-radius);
+  color: var(--ink-on-glass);
+  background-color: var(--reg-bg);
+  -webkit-backdrop-filter: blur(var(--reg-blur)) saturate(var(--reg-saturate));
+  backdrop-filter: blur(var(--reg-blur)) saturate(var(--reg-saturate));
+  border: 1px solid var(--reg-border);
+  box-shadow:
+    var(--reg-shadow),
+    inset 0 1px 0 0 var(--reg-shine),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06);
+  transition:
+    background-color 0.32s var(--ease),
+    box-shadow 0.32s var(--ease),
+    transform 0.32s var(--ease),
+    border-color 0.32s var(--ease);
+}
+
+/* Optional spec highlight that hints at lensing — a soft diagonal sheen */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0) 38%,
+      rgba(255, 255, 255, 0) 62%,
+      rgba(255, 255, 255, 0.08) 100%);
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: overlay;
+  opacity: 0.9;
+}
+
+.glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Variants */
+.glass.thin {
+  background-color: var(--thin-bg);
+  -webkit-backdrop-filter: blur(var(--thin-blur)) saturate(var(--thin-saturate));
+  backdrop-filter: blur(var(--thin-blur)) saturate(var(--thin-saturate));
+  border-color: var(--thin-border);
+  box-shadow:
+    var(--thin-shadow),
+    inset 0 1px 0 0 var(--thin-shine),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass.thick {
+  background-color: var(--thick-bg);
+  -webkit-backdrop-filter: blur(var(--thick-blur)) saturate(var(--thick-saturate));
+  backdrop-filter: blur(var(--thick-blur)) saturate(var(--thick-saturate));
+  border-color: var(--thick-border);
+  box-shadow:
+    var(--thick-shadow),
+    inset 0 1px 0 0 var(--thick-shine),
+    inset 0 -1.5px 0 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Hover lift */
+.glass.interactive {
+  cursor: pointer;
+}
+.glass.interactive:hover {
+  background-color: var(--reg-bg-hover);
+  transform: translateY(-1px);
+}
+.glass.thin.interactive:hover { background-color: var(--thin-bg-hover); }
+.glass.thick.interactive:hover { background-color: var(--thick-bg-hover); }
+
+.glass.interactive:active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 0.12s;
+}
+
+/* ============================================================
+   Page chrome
+   ============================================================ */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  color: var(--ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+  letter-spacing: -0.005em;
+  font-feature-settings: "ss01", "cv11";
+  transition: color 0.5s var(--ease);
+}
+
+.stage {
+  position: relative;
+  min-height: 100vh;
+  padding: 96px 48px 160px;
+}
+
+@media (max-width: 720px) {
+  .stage { padding: 80px 20px 120px; }
+}
+
+/* ============================================================
+   Backgrounds — toggleable wallpapers
+   pure CSS so glass has rich color to refract
+   ============================================================ */
+
+.wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  transition: opacity 0.7s var(--ease);
+}
+
+/* Tropical sunset */
+.wp-sunset {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 110%, #ff7a59 0%, transparent 60%),
+    radial-gradient(ellipse 70% 50% at 80% 100%, #ffb56b 0%, transparent 55%),
+    radial-gradient(ellipse 90% 70% at 50% 0%, #6a4af0 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 100% 30%, #ff5fa2 0%, transparent 60%),
+    linear-gradient(180deg, #2d1b69 0%, #ff7e5f 100%);
+}
+/* a soft horizon line + suggestion of water */
+.wp-sunset::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 30% 38%, rgba(255,225,180,0.7) 0%, transparent 6%),
+    linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.18) 56%, transparent 60%);
+}
+
+/* Meadow — green hills + sky */
+.wp-meadow {
+  background:
+    radial-gradient(ellipse 90% 60% at 20% 90%, #4a9d5f 0%, transparent 55%),
+    radial-gradient(ellipse 80% 55% at 80% 95%, #2e6e44 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 65% 20%, #ffe89a 0%, transparent 50%),
+    linear-gradient(180deg, #7fc8e8 0%, #b8e2c3 70%, #4a9d5f 100%);
+}
+.wp-meadow::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 70% 18%, rgba(255,250,220,0.95) 0%, rgba(255,250,220,0) 7%),
+    radial-gradient(circle at 15% 15%, rgba(255,255,255,0.4) 0%, transparent 10%),
+    radial-gradient(circle at 40% 25%, rgba(255,255,255,0.3) 0%, transparent 8%);
+}
+
+/* Aurora — dark moody */
+.wp-aurora {
+  background:
+    radial-gradient(ellipse 90% 70% at 15% 30%, #1f6feb 0%, transparent 55%),
+    radial-gradient(ellipse 100% 50% at 80% 60%, #6f3bff 0%, transparent 55%),
+    radial-gradient(ellipse 80% 60% at 50% 100%, #14c4a3 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, #ff4d96 0%, transparent 50%),
+    linear-gradient(180deg, #07091a 0%, #11173a 100%);
+}
+.wp-aurora::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255,255,255,0.9) 0%, transparent 0.3%),
+    radial-gradient(circle at 78% 24%, rgba(255,255,255,0.8) 0%, transparent 0.25%),
+    radial-gradient(circle at 60% 60%, rgba(255,255,255,0.7) 0%, transparent 0.2%),
+    radial-gradient(circle at 35% 80%, rgba(255,255,255,0.8) 0%, transparent 0.25%),
+    radial-gradient(circle at 88% 88%, rgba(255,255,255,0.7) 0%, transparent 0.22%);
+}
+
+/* Pastel cloud — light, airy */
+.wp-pastel {
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 20%, #ffd6e8 0%, transparent 55%),
+    radial-gradient(ellipse 70% 55% at 85% 30%, #cfe0ff 0%, transparent 55%),
+    radial-gradient(ellipse 90% 70% at 50% 110%, #fff3c2 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 90%, #c7f5e3 0%, transparent 55%),
+    linear-gradient(180deg, #fefaf5 0%, #f3e9f9 100%);
+}
+
+/* Midnight ocean — deep dark blue */
+.wp-midnight {
+  background:
+    radial-gradient(ellipse 100% 60% at 50% 110%, #0066b3 0%, transparent 55%),
+    radial-gradient(ellipse 70% 50% at 80% 20%, #6a4af0 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 15% 25%, #1aa8cc 0%, transparent 55%),
+    linear-gradient(180deg, #020617 0%, #0b1d4a 60%, #013a6e 100%);
+}
+.wp-midnight::after {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9) 0%, transparent 0.18%),
+    radial-gradient(circle at 70% 20%, rgba(255,255,255,0.8) 0%, transparent 0.16%),
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,0.7) 0%, transparent 0.14%),
+    radial-gradient(circle at 20% 65%, rgba(255,255,255,0.8) 0%, transparent 0.18%),
+    radial-gradient(circle at 90% 75%, rgba(255,255,255,0.7) 0%, transparent 0.14%);
+}
+
+/* ============================================================
+   Type
+   ============================================================ */
+
+.title {
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  margin: 0;
+}
+.subtitle {
+  font-size: 18px;
+  font-weight: 400;
+  opacity: 0.7;
+  margin: 12px 0 0;
+  max-width: 640px;
+  line-height: 1.5;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  opacity: 0.55;
+}
+.section-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.variant-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  opacity: 0.55;
+  margin: 0 0 14px;
+}
+
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* ============================================================
+   Layout helpers
+   ============================================================ */
+
+.wrap { max-width: 1240px; margin: 0 auto; }
+
+.header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 40px;
+  margin-bottom: 56px;
+  flex-wrap: wrap;
+}
+
+.section {
+  margin-top: 64px;
+}
+.section-head {
+  display: flex; align-items: baseline; gap: 16px;
+  margin-bottom: 24px;
+}
+.section-head .count {
+  font-size: 12px; opacity: 0.5;
+}
+
+.variants {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+@media (max-width: 980px) {
+  .variants { grid-template-columns: 1fr; }
+}
+
+.variant {
+  display: flex; flex-direction: column;
+  gap: 14px;
+}
+.variant-body {
+  padding: 28px 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* ============================================================
+   Floating control bar
+   ============================================================ */
+
+.control-bar {
+  position: fixed;
+  top: 24px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex; align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--glass-radius-pill);
+}
+.control-group {
+  display: flex; align-items: center; gap: 2px;
+  padding: 2px;
+  border-radius: var(--glass-radius-pill);
+  background: rgba(0, 0, 0, 0.06);
+}
+.control-chip {
+  font: inherit;
+  font-size: 12px; font-weight: 500;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-on-glass);
+  border-radius: var(--glass-radius-pill);
+  cursor: pointer;
+  transition: all 0.24s var(--ease);
+  display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+}
+.control-chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.control-chip.active {
+  background: rgba(255, 255, 255, 0.55);
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.7);
+}
+.swatch {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.6);
+  display: inline-block;
+}
+.sw-sunset   { background: linear-gradient(135deg, #ff7a59, #6a4af0); }
+.sw-meadow   { background: linear-gradient(135deg, #7fc8e8, #4a9d5f); }
+.sw-aurora   { background: linear-gradient(135deg, #6f3bff, #14c4a3); }
+.sw-pastel   { background: linear-gradient(135deg, #ffd6e8, #cfe0ff); }
+.sw-midnight { background: linear-gradient(135deg, #013a6e, #6a4af0); }
+
+/* divider */
+.cb-div {
+  width: 1px; height: 18px;
+  background: rgba(255,255,255,0.25);
+  margin: 0 4px;
+}

@@ -446,14 +446,14 @@ export default function Home() {
       </div>
 
       {/* ===== DEBUG PANEL ===== */}
-      <div className={styles.debugPanelContainer}>
+      {/* <div className={styles.debugPanelContainer}>
         <details className={styles.debugDetails}>
           <summary className={styles.debugSummary}>🔍 GLB Debug Analyzer</summary>
           <div className={styles.debugContent}>
             <GLBDebugPanel />
           </div>
         </details>
-      </div>
+      </div> */}
     </div>
   );
 }

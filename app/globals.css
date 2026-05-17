@@ -1,57 +1,73 @@
-/* ==========================================================
-   VOXELIZER WEB — SPATIAL GLASS aesthetic
-   Glassmorphism inspired by visionOS / spatial UI.
-   Aurora gradient background, translucent panels, generous
-   rounded corners, soft inner highlights.
+/* ============================================================
+   VOXELIZER WEB — LIQUID GLASS (từ glass.css & components.css)
+   "Trong veo, nhẹ nhàng, tinh tế"
    ========================================================== */
 
 :root {
-  /* Aurora tokens — dark default */
-  --bg-deep: #0a0e1c;
-  --aurora-a: rgba(150, 100, 255, 0.45);  /* violet */
-  --aurora-b: rgba(80, 200, 255, 0.40);   /* cyan */
-  --aurora-c: rgba(255, 180, 140, 0.30);  /* peach */
+  --glass-radius: 16px;
+  --glass-radius-sm: 10px;
+  --glass-radius-pill: 999px;
 
-  /* Glass surfaces */
-  --glass-fill: rgba(255, 255, 255, 0.10);
-  --glass-fill-strong: rgba(255, 255, 255, 0.16);
-  --glass-fill-soft: rgba(255, 255, 255, 0.06);
-  --glass-border: rgba(255, 255, 255, 0.18);
-  --glass-border-strong: rgba(255, 255, 255, 0.30);
-  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  /* THIN — barely-there veil */
+  --thin-bg: rgba(255, 255, 255, 0.08);
+  --thin-bg-hover: rgba(255, 255, 255, 0.14);
+  --thin-blur: 12px;
+  --thin-saturate: 140%;
+  --thin-border: rgba(255, 255, 255, 0.22);
+  --thin-shine: rgba(255, 255, 255, 0.55);
+  --thin-shadow: 0 4px 18px rgba(15, 23, 42, 0.18);
 
-  --shadow-elev-1: 0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-elev-2: 0 16px 40px rgba(0, 0, 0, 0.35);
-  --shadow-elev-3: 0 30px 70px rgba(0, 0, 0, 0.45);
+  /* REGULAR — the canonical liquid glass */
+  --reg-bg: rgba(255, 255, 255, 0.14);
+  --reg-bg-hover: rgba(255, 255, 255, 0.22);
+  --reg-blur: 22px;
+  --reg-saturate: 180%;
+  --reg-border: rgba(255, 255, 255, 0.32);
+  --reg-shine: rgba(255, 255, 255, 0.7);
+  --reg-shadow: 0 8px 32px rgba(15, 23, 42, 0.22);
 
-  /* Text */
-  --ink: rgba(255, 255, 255, 0.95);
-  --ink-dim: rgba(255, 255, 255, 0.70);
-  --ink-mute: rgba(255, 255, 255, 0.50);
-  --ink-faint: rgba(255, 255, 255, 0.32);
+  /* THICK — frosted, denser, more obscuring */
+  --thick-bg: rgba(255, 255, 255, 0.24);
+  --thick-bg-hover: rgba(255, 255, 255, 0.32);
+  --thick-blur: 36px;
+  --thick-saturate: 200%;
+  --thick-border: rgba(255, 255, 255, 0.45);
+  --thick-shine: rgba(255, 255, 255, 0.85);
+  --thick-shadow: 0 14px 44px rgba(15, 23, 42, 0.28);
 
-  /* Accents */
-  --amber: #ffd07a;
-  --amber-soft: rgba(255, 208, 122, 0.20);
-  --amber-border: rgba(255, 208, 122, 0.50);
-  --cyan: #9be3ff;
-  --cyan-soft: rgba(155, 227, 255, 0.20);
-  --violet: #c4a4ff;
-  --rose: #ffb3d4;
-  --green: #9ce8b9;
-  --danger: #ff8a8a;
+  --ink: #0f172a;
+  --ink-on-glass: rgba(15, 23, 42, 0.86);
+  --ink-on-glass-mute: rgba(15, 23, 42, 0.55);
+  --ink-dim: rgba(255, 255, 255, 0.55);
+  --ink-mute: rgba(255, 255, 255, 0.45);
+  --ink-faint: rgba(255, 255, 255, 0.28);
 
-  /* radii */
+  --accent: oklch(0.66 0.18 250);
+  --accent-soft: oklch(0.66 0.18 250 / 0.5);
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Timing */
+  --duration-fast: 0.18s;
+  --duration-mid: 0.24s;
+  --spring-bounce: var(--ease);
+  --spring-smooth: var(--ease);
+
+  /* Radius */
+  --radius-pill: 999px;
+  --radius-sheet: 16px;
+  --radius-panel: 14px;
+  --radius-button: 12px;
+
+  /* Legacy / compat */
   --r-sm: 10px;
   --r-md: 14px;
   --r-lg: 22px;
   --r-xl: 28px;
   --r-pill: 999px;
-
-  /* Fonts */
-  --font-display: 'SF Pro Display', -apple-system, 'Inter', system-ui, sans-serif;
-  --font-body: 'SF Pro Text', -apple-system, 'Inter', system-ui, sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
 }
 
 /* Light theme — warm cream aurora */
@@ -61,16 +77,26 @@
   --aurora-b: rgba(140, 210, 255, 0.40);
   --aurora-c: rgba(255, 200, 140, 0.50);
 
-  --glass-fill: rgba(255, 255, 255, 0.55);
-  --glass-fill-strong: rgba(255, 255, 255, 0.72);
-  --glass-fill-soft: rgba(255, 255, 255, 0.35);
-  --glass-border: rgba(60, 40, 20, 0.10);
-  --glass-border-strong: rgba(60, 40, 20, 0.20);
-  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --glass-bg-light: rgba(255, 255, 255, 0.75);
+  --glass-bg-dark: rgba(255, 255, 255, 0.60);
+  --glass-bg-heavy: rgba(255, 255, 255, 0.85);
+  --glass-bg-ultra-light: rgba(255, 255, 255, 0.50);
 
-  --shadow-elev-1: 0 4px 12px rgba(0, 0, 0, 0.15);
-  --shadow-elev-2: 0 16px 40px rgba(0, 0, 0, 0.20);
-  --shadow-elev-3: 0 30px 70px rgba(0, 0, 0, 0.25);
+  --glass-border-light: rgba(0, 0, 0, 0.10);
+  --glass-border-dark: rgba(0, 0, 0, 0.06);
+  --glass-border-strong: rgba(0, 0, 0, 0.18);
+
+  --glass-shadow-md:
+    inset 0 1.5px 1.5px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.08);
+
+  --specular-light: radial-gradient(
+    ellipse 60% 50% at 28% 15%,
+    rgba(255, 255, 255, 0.70) 0%,
+    rgba(255, 255, 255, 0.30) 35%,
+    transparent 65%
+  );
 
   --ink: rgba(30, 20, 10, 0.96);
   --ink-dim: rgba(30, 20, 10, 0.65);
@@ -86,6 +112,14 @@
   --rose: #b03070;
   --green: #2e7a44;
   --danger: #b22020;
+}
+
+/* Dark mode / Midnight theme — Midnight is default, this ensures consistency */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Midnight defaults already optimized in :root, this ensures override if needed */
+    --specular-light: var(--specular-dark);
+  }
 }
 
 * {
