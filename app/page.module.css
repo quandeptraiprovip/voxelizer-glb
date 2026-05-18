@@ -513,6 +513,49 @@
   font-size: 12px;
 }
 
+/* ----- Parameter Inputs ----- */
+.paramInput {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.paramInput:last-child {
+  margin-bottom: 0;
+}
+
+.paramInput label {
+  font-size: 12px;
+  color: var(--ink-dim);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.paramInput input[type="number"] {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--ink-bright);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  transition: all 0.2s var(--ease);
+}
+
+.paramInput input[type="number"]:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.paramInput input[type="number"]:focus {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--amber);
+  box-shadow: 0 0 0 2px rgba(255, 208, 122, 0.2);
+}
+
 /* ----- Sliders ----- */
 .slider {
   margin-bottom: 14px;

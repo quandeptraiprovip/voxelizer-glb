@@ -96,6 +96,23 @@ export default function ModelPreview({ geometry, width = 300, height = 160 }: Mo
         });
 
         const mesh = new THREE.Mesh(geo, material);
+
+        // Center geometry and calculate bounds
+        geo.computeBoundingBox();
+        const bbox = geo.boundingBox;
+        if (bbox) {
+          const center = bbox.getCenter(new THREE.Vector3());
+          const size = bbox.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+
+          // Center the geometry at origin
+          geo.translate(-center.x, -center.y, -center.z);
+
+          // Store the camera distance needed to view the object
+          const cameraDistance = maxDim / (2 * Math.tan((40 * Math.PI) / (2 * 180)));
+          mesh.userData.cameraDistance = Math.max(cameraDistance * 1.2, 2);
+        }
+
         scene.add(mesh);
         console.log('[ModelPreview] ✓ Mesh added to scene');
 
@@ -118,7 +135,7 @@ export default function ModelPreview({ geometry, width = 300, height = 160 }: Mo
         scene.add(dl3);
 
         const camera = new THREE.PerspectiveCamera(40, w / h, 0.01, 100);
-        const radius = 3.5;
+        const radius = mesh.userData.cameraDistance || 3.5;
         let angle = 0;
 
         const animate = () => {

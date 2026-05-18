@@ -273,48 +273,50 @@ export default function Home() {
             <section className={styles.section}>
               <div className={styles.sectionLabel}>Parameters</div>
 
-              <div className={styles.slider}>
-                <div className={styles.sliderHead}>
-                  <span className={styles.sliderName}>Target blocks</span>
-                  <span className={styles.sliderValue}>{targetBlocks.toLocaleString()}</span>
-                </div>
+              <div className={styles.paramInput}>
+                <label htmlFor="targetBlocks">Target blocks</label>
                 <input
-                  type="range"
-                  min="20"
-                  max="500"
-                  step="10"
+                  id="targetBlocks"
+                  type="number"
                   value={targetBlocks}
-                  onChange={(e) => setTargetBlocks(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    if (!isNaN(val)) {
+                      setTargetBlocks(val);
+                    }
+                  }}
                 />
               </div>
 
-              <div className={styles.slider}>
-                <div className={styles.sliderHead}>
-                  <span className={styles.sliderName}>Block size</span>
-                  <span className={styles.sliderValue}>{blockSize.toFixed(2)}</span>
-                </div>
+              <div className={styles.paramInput}>
+                <label htmlFor="blockSize">Block size</label>
                 <input
-                  type="range"
-                  min="0.5"
-                  max="3.0"
+                  id="blockSize"
+                  type="number"
                   step="0.1"
                   value={blockSize}
-                  onChange={(e) => setBlockSize(parseFloat(e.target.value))}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) {
+                      setBlockSize(val);
+                    }
+                  }}
                 />
               </div>
 
-              <div className={styles.slider}>
-                <div className={styles.sliderHead}>
-                  <span className={styles.sliderName}>Gap ratio</span>
-                  <span className={styles.sliderValue}>{gapRatio.toFixed(2)}</span>
-                </div>
+              <div className={styles.paramInput}>
+                <label htmlFor="gapRatio">Gap ratio</label>
                 <input
-                  type="range"
-                  min="0"
-                  max="0.5"
+                  id="gapRatio"
+                  type="number"
                   step="0.05"
                   value={gapRatio}
-                  onChange={(e) => setGapRatio(parseFloat(e.target.value))}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) {
+                      setGapRatio(val);
+                    }
+                  }}
                 />
               </div>
             </section>
