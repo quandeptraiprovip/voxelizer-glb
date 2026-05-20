@@ -695,6 +695,49 @@
   color: var(--ink-muted, rgba(255, 255, 255, 0.55));
 }
 
+/* ----- Algorithm method selector ----- */
+.methodGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.methodBtn {
+  position: relative;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-button, 10px);
+  color: var(--ink-muted, rgba(255, 255, 255, 0.55));
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.12s;
+  text-align: center;
+}
+
+.methodBtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--ink-on-glass, rgba(255, 255, 255, 0.85));
+  transform: translateY(-1px);
+}
+
+.methodBtnActive {
+  background: rgba(99, 179, 237, 0.18);
+  border-color: rgba(99, 179, 237, 0.55);
+  color: #90cdf4;
+  font-weight: 600;
+}
+
+.methodBtnActive:hover {
+  background: rgba(99, 179, 237, 0.24);
+  border-color: rgba(99, 179, 237, 0.7);
+}
+
 /* ----- Buttons ----- */
 .buttonGroup {
   display: flex;

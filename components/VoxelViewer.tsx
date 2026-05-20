@@ -96,7 +96,9 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
     scene.add(ambientLight);
 
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    directionalLight.position.set(10, 15, 10);
+    // Fixed world-space light position (front-left-top)
+    directionalLight.position.set(30, 40, 30);
+    directionalLight.target.position.set(0, 0, 0); // Point at world origin
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 2048;
     directionalLight.shadow.mapSize.height = 2048;
@@ -106,6 +108,7 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
     directionalLight.shadow.camera.top = 200;
     directionalLight.shadow.camera.bottom = -200;
     scene.add(directionalLight);
+    scene.add(directionalLight.target);
 
     // Simple orbit controls
     const controls = {
@@ -180,6 +183,13 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
         cameraRef.current.position.y = bounds.center.y + distance * Math.sin(controlsRef.current.rotation.x);
         cameraRef.current.position.z = bounds.center.z + distance * Math.cos(controlsRef.current.rotation.y) * Math.cos(controlsRef.current.rotation.x);
         cameraRef.current.lookAt(bounds.center.x, bounds.center.y, bounds.center.z);
+
+        // Update directional light's shadow camera to follow object center
+        const lightRef = sceneRef.current?.children.find((child) => child instanceof THREE.DirectionalLight) as THREE.DirectionalLight | undefined;
+        if (lightRef) {
+          lightRef.target.position.set(bounds.center.x, bounds.center.y, bounds.center.z);
+          lightRef.target.updateMatrixWorld();
+        }
       }
 
       renderer.render(scene, camera);

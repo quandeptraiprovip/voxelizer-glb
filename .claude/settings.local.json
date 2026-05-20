@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk grep *)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")",
+      "Bash(rtk git *)",
+      "Bash(git checkout *)",
+      "Bash(rtk npm *)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/verify_fixes.sh)",
+      "Bash(/tmp/verify_fixes.sh)",
+      "Bash(rtk read *)",
+      "Bash(node *)",
+      "Bash(rtk ls *)",
+      "Bash(npm list *)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(rtk curl *)",
+      "Bash(rtk ps *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/panel)",
+      "Bash(rtk wc *)",
+      "Bash(rtk tsc *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d.get\\('exports',{}\\).keys\\(\\)\\)[:10]\\)\")",
+      "Bash(curl -s http://localhost:3001/panel)"
+    ]
+  }
+}

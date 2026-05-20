@@ -1241,6 +1241,7 @@ interface VoxelizeOptions {
   interior?: boolean;
   /** Tilt voxels to follow surface normal; size auto-fits cell to avoid overlap */
   curvedVoxels?: boolean;
+  method?: 'proximity' | 'triangle-aabb' | 'conservative' | 'sdf';
 }
 
 export function voxelizeGeometry(
@@ -1264,6 +1265,18 @@ export function voxelizeGeometry(
   const gridX = Math.max(1, Math.ceil(sizeX / baseVoxelSize));
   const gridY = Math.max(1, Math.ceil(sizeY / baseVoxelSize));
   const gridZ = Math.max(1, Math.ceil(sizeZ / baseVoxelSize));
+
+  // Center the grid around bboxCenter (same as worker)
+  const bboxCenter = [
+    (bbox.min.x + bbox.max.x) * 0.5,
+    (bbox.min.y + bbox.max.y) * 0.5,
+    (bbox.min.z + bbox.max.z) * 0.5,
+  ];
+  const gridOffset = [
+    bboxCenter[0] - (gridX * baseVoxelSize) * 0.5,
+    bboxCenter[1] - (gridY * baseVoxelSize) * 0.5,
+    bboxCenter[2] - (gridZ * baseVoxelSize) * 0.5,
+  ];
 
   const triData = extractTriangles(geometry);
   const { positions, colors, normals, indices } = triData;
@@ -1325,19 +1338,20 @@ export function voxelizeGeometry(
     // Disable adaptive sizing for testing
     const adaptiveSize = baseVoxelSize; // * (0.5 + 1.5 * Math.min(1, curv));
 
-    const x0=Math.max(0,Math.floor((Math.min(ax,bx,cx)-bbox.min.x)/baseVoxelSize)-1);
-    const x1=Math.min(gridX-1,Math.ceil((Math.max(ax,bx,cx)-bbox.min.x)/baseVoxelSize)+1);
-    const y0=Math.max(0,Math.floor((Math.min(ay,by,cy)-bbox.min.y)/baseVoxelSize)-1);
-    const y1=Math.min(gridY-1,Math.ceil((Math.max(ay,by,cy)-bbox.min.y)/baseVoxelSize)+1);
-    const z0=Math.max(0,Math.floor((Math.min(az,bz,cz)-bbox.min.z)/baseVoxelSize)-1);
-    const z1=Math.min(gridZ-1,Math.ceil((Math.max(az,bz,cz)-bbox.min.z)/baseVoxelSize)+1);
+    const x0=Math.max(0,Math.floor((Math.min(ax,bx,cx)-gridOffset[0])/baseVoxelSize)-1);
+    const x1=Math.min(gridX-1,Math.ceil((Math.max(ax,bx,cx)-gridOffset[0])/baseVoxelSize)+1);
+    const y0=Math.max(0,Math.floor((Math.min(ay,by,cy)-gridOffset[1])/baseVoxelSize)-1);
+    const y1=Math.min(gridY-1,Math.ceil((Math.max(ay,by,cy)-gridOffset[1])/baseVoxelSize)+1);
+    const z0=Math.max(0,Math.floor((Math.min(az,bz,cz)-gridOffset[2])/baseVoxelSize)-1);
+    const z1=Math.min(gridZ-1,Math.ceil((Math.max(az,bz,cz)-gridOffset[2])/baseVoxelSize)+1);
 
     for (let gz=z0;gz<=z1;gz++) {
       for (let gy=y0;gy<=y1;gy++) {
         for (let gx=x0;gx<=x1;gx++) {
-          const cx_pos=bbox.min.x+(gx+.5)*baseVoxelSize;
-          const cy_pos=bbox.min.y+(gy+.5)*baseVoxelSize;
-          const cz_pos=bbox.min.z+(gz+.5)*baseVoxelSize;
+          // Calculate from center outward to avoid floating point accumulation bias
+          const cx_pos=bboxCenter[0] + (gx - gridX*0.5 + 0.5)*baseVoxelSize;
+          const cy_pos=bboxCenter[1] + (gy - gridY*0.5 + 0.5)*baseVoxelSize;
+          const cz_pos=bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*baseVoxelSize;
 
           const distSq = closestDistToTriSq(cx_pos,cy_pos,cz_pos,ax,ay,az,bx,by,bz,cx,cy,cz);
           if (distSq <= SURFACE_THRESHOLD_SQ) {
@@ -1370,27 +1384,21 @@ export function voxelizeGeometry(
   // ── Step 2: Interior fill via majority-voting raycast ────────────────────
   // For each grid point: cast rays in 3 directions, vote by parity rule
   if (interior) {
-    const PERTURB = 0.000113 * baseVoxelSize;
-
     for (let gz = 0; gz < gridZ; gz++) {
       for (let gy = 0; gy < gridY; gy++) {
         for (let gx = 0; gx < gridX; gx++) {
           const idx = gz * gridY * gridX + gy * gridX + gx;
           if (grid[idx]) continue; // skip surface/filled voxels
 
-          const cx = bbox.min.x + (gx + 0.5) * baseVoxelSize;
-          const cy = bbox.min.y + (gy + 0.5) * baseVoxelSize;
-          const cz = bbox.min.z + (gz + 0.5) * baseVoxelSize;
+          // Calculate from center outward to avoid floating point accumulation bias
+          const cx = bboxCenter[0] + (gx - gridX*0.5 + 0.5)*baseVoxelSize;
+          const cy = bboxCenter[1] + (gy - gridY*0.5 + 0.5)*baseVoxelSize;
+          const cz = bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*baseVoxelSize;
 
-          // Apply small perturbation to avoid numerical issues
-          const px = cx + PERTURB;
-          const py = cy + PERTURB;
-          const pz = cz + PERTURB;
-
-          // Cast rays in 3 directions and count intersections
-          const voteX = countRayIntersections(px, py, pz, 'x', triPosData, triCount, bbox, baseVoxelSize);
-          const voteY = countRayIntersections(px, py, pz, 'y', triPosData, triCount, bbox, baseVoxelSize);
-          const voteZ = countRayIntersections(px, py, pz, 'z', triPosData, triCount, bbox, baseVoxelSize);
+          // Cast rays in 3 directions from voxel center (no perturbation bias)
+          const voteX = countRayIntersections(cx, cy, cz, 'x', triPosData, triCount, bbox, baseVoxelSize);
+          const voteY = countRayIntersections(cx, cy, cz, 'y', triPosData, triCount, bbox, baseVoxelSize);
+          const voteZ = countRayIntersections(cx, cy, cz, 'z', triPosData, triCount, bbox, baseVoxelSize);
 
           // Majority voting: at least 2/3 rays must say "inside"
           const insideCount = [voteX, voteY, voteZ].filter(v => v).length;
@@ -1411,9 +1419,10 @@ export function voxelizeGeometry(
         const state = grid[idx];
         if (state === 0) continue; // empty
 
-        const posX = bbox.min.x + (gx + .5) * baseVoxelSize;
-        const posY = bbox.min.y + (gy + .5) * baseVoxelSize;
-        const posZ = bbox.min.z + (gz + .5) * baseVoxelSize;
+        // Calculate from center outward to avoid floating point accumulation bias
+        const posX = bboxCenter[0] + (gx - gridX*0.5 + 0.5)*baseVoxelSize;
+        const posY = bboxCenter[1] + (gy - gridY*0.5 + 0.5)*baseVoxelSize;
+        const posZ = bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*baseVoxelSize;
 
         // Use uniform size for now (adaptive disabled for testing)
         const displaySize = baseVoxelSize * (1 - gapRatio);
@@ -1516,7 +1525,7 @@ export async function voxelizeGeometryAsync(
         reject(new Error(`Worker error: ${error.message}`));
       };
 
-      const { surface = true, interior = true, curvedVoxels = true } = options;
+      const { surface = true, interior = true, curvedVoxels = true, method = 'proximity' } = options;
 
       const colorFlat = flattenAttributeVec3(geometry, 'color');
       const normalFlat = flattenAttributeVec3(geometry, 'normal');
@@ -1572,6 +1581,7 @@ export async function voxelizeGeometryAsync(
           surface,
           interior,
           curvedVoxels,
+          method,
         },
       }, [positionsBuffer, indicesBuffer, colorsBuffer, normalsBuffer]);
     } catch (error) {

@@ -155,9 +155,25 @@ export function quaternionStableSurfaceFrame(
   const n1 = ny / len;
   const n2 = nz / len;
 
-  let ux = upx;
-  let uy = upy;
-  let uz = upz;
+  // Project world up onto the plane: u_proj = u - (u·n)*n
+  const dot = upx * n0 + upy * n1 + upz * n2;
+  let ux = upx - dot * n0;
+  let uy = upy - dot * n1;
+  let uz = upz - dot * n2;
+
+  // Normalize projected up vector
+  const uproj_len = Math.hypot(ux, uy, uz);
+  if (uproj_len > 1e-6) {
+    ux /= uproj_len;
+    uy /= uproj_len;
+    uz /= uproj_len;
+  } else {
+    // Fallback: if projection is too small, use [1,0,0] as up-on-plane
+    ux = 1;
+    uy = 0;
+    uz = 0;
+  }
+
   let t1x = uy * n2 - uz * n1;
   let t1y = uz * n0 - ux * n2;
   let t1z = ux * n1 - uy * n0;
@@ -253,17 +269,16 @@ function rotationMatrix3ToQuaternion(
 }
 
 /**
- * Blend identity → stable surface frame by curvature.
- * sqrt-like curve gives pleasant tilt on gentle slopes while flat regions stay mostly axis-aligned.
+ * Full surface alignment: local Z → surface normal, local Y → world-up projected
+ * onto the tangent plane for stable twist ("grain") across connected flat regions.
+ * curvature is accepted for API compatibility but no longer used for blending —
+ * flat surfaces have the most reliable normals and benefit most from full alignment.
  */
 export function orientationForSurface(
   nx: number,
   ny: number,
   nz: number,
-  curvature: number
+  _curvature: number,
 ): Quat {
-  const c = Math.max(0, Math.min(1, curvature));
-  const t = Math.max(0, Math.min(1, 0.2 + 0.88 * Math.pow(c, 0.26)));
-  const target = quaternionStableSurfaceFrame(nx, ny, nz);
-  return slerpQuat([0, 0, 0, 1], target, t);
+  return quaternionStableSurfaceFrame(nx, ny, nz);
 }

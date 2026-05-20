@@ -23,6 +23,7 @@ interface VoxelizeParams {
   surface: boolean;
   interior: boolean;
   curvedVoxels: boolean;
+  method?: 'proximity' | 'triangle-aabb' | 'conservative' | 'sdf';
 }
 
 interface Voxel {
@@ -330,8 +331,8 @@ function buildScanLineInside(
   // ── Z-axis scan (columns indexed by gx, gy) ──
   for (let gy = 0; gy < gridY; gy++) {
     for (let gx = 0; gx < gridX; gx++) {
-      const px = gridOffset[0] + (gx + 0.5) * voxelSize + PERTURB;
-      const py = gridOffset[1] + (gy + 0.5) * voxelSize + PERTURB;
+      const px = gridOffset[0] + (gx + 0.5) * voxelSize;
+      const py = gridOffset[1] + (gy + 0.5) * voxelSize;
 
       // Collect all Z-intersections in this column
       const hits: number[] = [];
@@ -364,7 +365,7 @@ function buildScanLineInside(
       hits.sort((a, b) => a - b);
 
       for (let gz = 0; gz < gridZ; gz++) {
-        const pz = gridOffset[2] + (gz + 0.5) * voxelSize + PERTURB;
+        const pz = gridOffset[2] + (gz + 0.5) * voxelSize;
         let count = 0;
         for (const h of hits) {
           if (h <= pz) count++;
@@ -380,8 +381,8 @@ function buildScanLineInside(
   // ── X-axis scan (columns indexed by gy, gz) ──
   for (let gz = 0; gz < gridZ; gz++) {
     for (let gy = 0; gy < gridY; gy++) {
-      const py = gridOffset[1] + (gy + 0.5) * voxelSize + PERTURB;
-      const pz = gridOffset[2] + (gz + 0.5) * voxelSize + PERTURB;
+      const py = gridOffset[1] + (gy + 0.5) * voxelSize;
+      const pz = gridOffset[2] + (gz + 0.5) * voxelSize;
 
       const hits: number[] = [];
       const seenTri = new Set<number>();
@@ -412,7 +413,7 @@ function buildScanLineInside(
       hits.sort((a, b) => a - b);
 
       for (let gx = 0; gx < gridX; gx++) {
-        const px = gridOffset[0] + (gx + 0.5) * voxelSize + PERTURB;
+        const px = gridOffset[0] + (gx + 0.5) * voxelSize;
         let count = 0;
         for (const h of hits) {
           if (h <= px) count++;
@@ -428,8 +429,8 @@ function buildScanLineInside(
   // ── Y-axis scan (columns indexed by gx, gz) ──
   for (let gz = 0; gz < gridZ; gz++) {
     for (let gx = 0; gx < gridX; gx++) {
-      const px = gridOffset[0] + (gx + 0.5) * voxelSize + PERTURB;
-      const pz = gridOffset[2] + (gz + 0.5) * voxelSize + PERTURB;
+      const px = gridOffset[0] + (gx + 0.5) * voxelSize;
+      const pz = gridOffset[2] + (gz + 0.5) * voxelSize;
 
       const hits: number[] = [];
       const seenTri = new Set<number>();
@@ -460,7 +461,7 @@ function buildScanLineInside(
       hits.sort((a, b) => a - b);
 
       for (let gy = 0; gy < gridY; gy++) {
-        const py = bbox.min[1] + (gy + 0.5) * voxelSize + PERTURB;
+        const py = bbox.min[1] + (gy + 0.5) * voxelSize;
         let count = 0;
         for (const h of hits) {
           if (h <= py) count++;
@@ -485,6 +486,64 @@ function buildScanLineInside(
   return insideFinal;
 }
 
+// ─── TRIANGLE–AABB SAT TEST ───────────────────────────────────────────────────
+
+/**
+ * Separating Axis Theorem test for triangle vs axis-aligned box.
+ * Box is centered at (cx,cy,cz) with half-extents (hx,hy,hz).
+ * Returns true when the shapes overlap (no separating axis found).
+ */
+function triangleAABBIntersect(
+  v0x: number, v0y: number, v0z: number,
+  v1x: number, v1y: number, v1z: number,
+  v2x: number, v2y: number, v2z: number,
+  cx: number, cy: number, cz: number,
+  hx: number, hy: number, hz: number,
+): boolean {
+  // Translate so box center is at origin
+  const a0x = v0x - cx, a0y = v0y - cy, a0z = v0z - cz;
+  const a1x = v1x - cx, a1y = v1y - cy, a1z = v1z - cz;
+  const a2x = v2x - cx, a2y = v2y - cy, a2z = v2z - cz;
+  const f0x = a1x - a0x, f0y = a1y - a0y, f0z = a1z - a0z;
+  const f1x = a2x - a1x, f1y = a2y - a1y, f1z = a2z - a1z;
+  const f2x = a0x - a2x, f2y = a0y - a2y, f2z = a0z - a2z;
+
+  // Project tri onto axis (eax,eay,eaz) and check overlap with AABB projection
+  const sat = (eax: number, eay: number, eaz: number): boolean => {
+    const p0 = eax * a0x + eay * a0y + eaz * a0z;
+    const p1 = eax * a1x + eay * a1y + eaz * a1z;
+    const p2 = eax * a2x + eay * a2y + eaz * a2z;
+    const r = hx * Math.abs(eax) + hy * Math.abs(eay) + hz * Math.abs(eaz);
+    return Math.min(p0, p1, p2) <= r && Math.max(p0, p1, p2) >= -r;
+  };
+
+  // 9 axes: coordinate_axis × triangle_edge
+  if (!sat(0, -f0z, f0y)) return false;
+  if (!sat(f0z, 0, -f0x)) return false;
+  if (!sat(-f0y, f0x, 0)) return false;
+  if (!sat(0, -f1z, f1y)) return false;
+  if (!sat(f1z, 0, -f1x)) return false;
+  if (!sat(-f1y, f1x, 0)) return false;
+  if (!sat(0, -f2z, f2y)) return false;
+  if (!sat(f2z, 0, -f2x)) return false;
+  if (!sat(-f2y, f2x, 0)) return false;
+
+  // 3 AABB face normals (coordinate axes)
+  if (Math.max(a0x, a1x, a2x) < -hx || Math.min(a0x, a1x, a2x) > hx) return false;
+  if (Math.max(a0y, a1y, a2y) < -hy || Math.min(a0y, a1y, a2y) > hy) return false;
+  if (Math.max(a0z, a1z, a2z) < -hz || Math.min(a0z, a1z, a2z) > hz) return false;
+
+  // Triangle face normal
+  const fnx = f0y * f1z - f0z * f1y;
+  const fny = f0z * f1x - f0x * f1z;
+  const fnz = f0x * f1y - f0y * f1x;
+  const d = fnx * a0x + fny * a0y + fnz * a0z;
+  const r = hx * Math.abs(fnx) + hy * Math.abs(fny) + hz * Math.abs(fnz);
+  if (d > r || d < -r) return false;
+
+  return true;
+}
+
 // ─── MAIN VOXELIZE ─────────────────────────────────────────────────────────────
 
 function voxelize(
@@ -496,7 +555,9 @@ function voxelize(
   params: VoxelizeParams,
   onProgress?: (progress: number) => void
 ): Voxel[] {
-  const { targetBlocks, blockSizeMul, gapRatio, surface, interior, curvedVoxels } = params;
+  const { targetBlocks, blockSizeMul, gapRatio, surface, interior, curvedVoxels, method = 'proximity' } = params;
+  // 0=proximity 1=sdf 2=triangle-aabb 3=conservative
+  const methodCode = method === 'sdf' ? 1 : method === 'triangle-aabb' ? 2 : method === 'conservative' ? 3 : 0;
 
   const sizeX = bbox.max[0] - bbox.min[0];
   const sizeY = bbox.max[1] - bbox.min[1];
@@ -562,10 +623,13 @@ function voxelize(
   };
 
   // ── STEP 1: Surface voxelization ─────────────────────────────────────────
-  // With interior fill off: thinner shell + outward side only (no inner sheet / volume)
-  // Increased band to catch more surface details on curved meshes (still one cell thick shell)
   const surfaceBand = interior ? 1.0 : 0.65;
-  const THRESH_SQ = (voxelSize * surfaceBand) * (voxelSize * surfaceBand);
+  // SDF: exact half-cell radius (tightest); proximity: band-scaled radius
+  const proximityBand = methodCode === 1 ? 0.5 : surfaceBand;
+  const THRESH_SQ = (voxelSize * proximityBand) ** 2;
+  const halfCell = voxelSize * 0.5;
+  // Conservative expands the AABB by 15% to guarantee no gaps
+  const aabbHalf = methodCode === 3 ? halfCell * 1.15 : halfCell;
 
   if (surface) {
     for (let ti = 0; ti < triCount; ti++) {
@@ -606,29 +670,36 @@ function voxelize(
       for (let gz=gz0; gz<=gz1; gz++) {
         for (let gy=gy0; gy<=gy1; gy++) {
           for (let gx=gx0; gx<=gx1; gx++) {
-            const pcx = gridOffset[0] + (gx+0.5)*voxelSize;
-            const pcy = gridOffset[1] + (gy+0.5)*voxelSize;
-            const pcz = gridOffset[2] + (gz+0.5)*voxelSize;
-            const hit = triangleClosestBarycentric(pcx, pcy, pcz, ax, ay, az, bx, by, bz, cx, cy, cz);
-            if (hit.distSq <= THRESH_SQ) {
-              // Remove outward margin bias - use symmetric surface detection
-              const idx = gz*gridY*gridX + gy*gridX + gx;
-              grid[idx] = 1;
-              const o = idx * 3;
-              const nw = 1 / (hit.distSq + (voxelSize * 0.07) * (voxelSize * 0.07));
-              normalSum[o] += fnx * nw;
-              normalSum[o + 1] += fny * nw;
-              normalSum[o + 2] += fnz * nw;
-              normalWsum[idx] += nw;
-              if (triCurv > cellCurvature[idx]) cellCurvature[idx] = triCurv;
-              if (hit.distSq < cellBestDistSq[idx]) {
-                cellBestDistSq[idx] = hit.distSq;
-                const wa = 1 - hit.barB - hit.barC;
-                const r = wa * triCol[b] + hit.barB * triCol[b + 3] + hit.barC * triCol[b + 6];
-                const g = wa * triCol[b + 1] + hit.barB * triCol[b + 4] + hit.barC * triCol[b + 7];
-                const bl = wa * triCol[b + 2] + hit.barB * triCol[b + 5] + hit.barC * triCol[b + 8];
-                voxelColors.set(idx, [r, g, bl]);
-              }
+            const pcx = bboxCenter[0] + (gx - gridX*0.5 + 0.5)*voxelSize;
+            const pcy = bboxCenter[1] + (gy - gridY*0.5 + 0.5)*voxelSize;
+            const pcz = bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*voxelSize;
+
+            // Method dispatch: AABB/conservative use SAT first, then closest-point for color
+            let hit: { distSq: number; barB: number; barC: number };
+            if (methodCode >= 2) {
+              if (!triangleAABBIntersect(ax,ay,az,bx,by,bz,cx,cy,cz, pcx,pcy,pcz, aabbHalf,aabbHalf,aabbHalf)) continue;
+              hit = triangleClosestBarycentric(pcx, pcy, pcz, ax, ay, az, bx, by, bz, cx, cy, cz);
+            } else {
+              hit = triangleClosestBarycentric(pcx, pcy, pcz, ax, ay, az, bx, by, bz, cx, cy, cz);
+              if (hit.distSq > THRESH_SQ) continue;
+            }
+
+            const idx = gz*gridY*gridX + gy*gridX + gx;
+            grid[idx] = 1;
+            const o = idx * 3;
+            const nw = 1 / (hit.distSq + (voxelSize * 0.07) * (voxelSize * 0.07));
+            normalSum[o] += fnx * nw;
+            normalSum[o + 1] += fny * nw;
+            normalSum[o + 2] += fnz * nw;
+            normalWsum[idx] += nw;
+            if (triCurv > cellCurvature[idx]) cellCurvature[idx] = triCurv;
+            if (hit.distSq < cellBestDistSq[idx]) {
+              cellBestDistSq[idx] = hit.distSq;
+              const wa = 1 - hit.barB - hit.barC;
+              const r = wa * triCol[b] + hit.barB * triCol[b + 3] + hit.barC * triCol[b + 6];
+              const g = wa * triCol[b + 1] + hit.barB * triCol[b + 4] + hit.barC * triCol[b + 7];
+              const bl = wa * triCol[b + 2] + hit.barB * triCol[b + 5] + hit.barC * triCol[b + 8];
+              voxelColors.set(idx, [r, g, bl]);
             }
           }
         }
@@ -723,9 +794,32 @@ function voxelize(
     for (let iter = 0; iter < MAX_FILL_ITERS; iter++) {
       const toFill: number[] = [];
 
+      // Forward pass: gx from 1 to gridX-2
       for (let gz = 1; gz < gridZ - 1; gz++) {
         for (let gy = 1; gy < gridY - 1; gy++) {
           for (let gx = 1; gx < gridX - 1; gx++) {
+            const idx = gz * gridY * gridX + gy * gridX + gx;
+            if (grid[idx] !== 0) continue;
+
+            let filledNeighbours = 0;
+            if (grid[idx - 1] !== 0) filledNeighbours++;
+            if (grid[idx + 1] !== 0) filledNeighbours++;
+            if (grid[idx - gridX] !== 0) filledNeighbours++;
+            if (grid[idx + gridX] !== 0) filledNeighbours++;
+            if (grid[idx - gridY * gridX] !== 0) filledNeighbours++;
+            if (grid[idx + gridY * gridX] !== 0) filledNeighbours++;
+
+            if (filledNeighbours >= FILL_VOTE_THRESHOLD) {
+              toFill.push(idx);
+            }
+          }
+        }
+      }
+
+      // Backward pass: gx from gridX-2 to 1 (reverse direction)
+      for (let gz = gridZ - 2; gz >= 1; gz--) {
+        for (let gy = gridY - 2; gy >= 1; gy--) {
+          for (let gx = gridX - 2; gx >= 1; gx--) {
             const idx = gz * gridY * gridX + gy * gridX + gx;
             if (grid[idx] !== 0) continue;
 
@@ -783,7 +877,7 @@ function voxelize(
   }
   reportProgress(80);
 
-  // Smooth surface normals (6-neighbor box blur) — stabler, more “hand-guided” rotations
+  // ── STEP 1: Extract and canonicalize surface normals ──────────────────────────
   const hasOrient = new Uint8Array(cellCount);
   const orientNx = new Float32Array(cellCount);
   const orientNy = new Float32Array(cellCount);
@@ -791,8 +885,10 @@ function voxelize(
   const smNx = new Float32Array(cellCount);
   const smNy = new Float32Array(cellCount);
   const smNz = new Float32Array(cellCount);
+  const canonicalNorm = new Float32Array(cellCount * 3); // Store canonical normal sum for flat regions
 
   if (surface && curvedVoxels) {
+    // First pass: normalize raw normals
     for (let idx = 0; idx < cellCount; idx++) {
       if (grid[idx] !== 1 || normalWsum[idx] <= 0) continue;
       const o = idx * 3;
@@ -805,39 +901,88 @@ function voxelize(
       orientNy[idx] = ny / nl;
       orientNz[idx] = nz / nl;
       hasOrient[idx] = 1;
+      // Store unnormalized sum for later canonicalization
+      canonicalNorm[idx * 3] = normalSum[o];
+      canonicalNorm[idx * 3 + 1] = normalSum[o + 1];
+      canonicalNorm[idx * 3 + 2] = normalSum[o + 2];
     }
+
+    // Second pass: Detect and canonicalize flat surface regions
     const nxv = gridX;
     const nyv = gridY;
     const nzv = gridZ;
+    const FLAT_DETECTION_THRESHOLD = 0.998; // cos(~3.6°)
+    const visited = new Uint8Array(cellCount);
+    const dx = [1, -1, 0, 0, 0, 0];
+    const dy = [0, 0, 1, -1, 0, 0];
+    const dz = [0, 0, 0, 0, 1, -1];
+
+    const canonicalizeGroup = (startIdx: number) => {
+      const queue: number[] = [startIdx];
+      visited[startIdx] = 1;
+      let sumNx = canonicalNorm[startIdx * 3];
+      let sumNy = canonicalNorm[startIdx * 3 + 1];
+      let sumNz = canonicalNorm[startIdx * 3 + 2];
+      let count = 1;
+
+      let head = 0;
+      while (head < queue.length) {
+        const idx = queue[head++];
+        const gz = Math.floor(idx / (nyv * nxv));
+        const rem = idx % (nyv * nxv);
+        const gy = Math.floor(rem / nxv);
+        const gx = rem % nxv;
+
+        for (let d = 0; d < 6; d++) {
+          const ngx = gx + dx[d];
+          const ngy = gy + dy[d];
+          const ngz = gz + dz[d];
+
+          if (ngx < 0 || ngx >= nxv || ngy < 0 || ngy >= nyv || ngz < 0 || ngz >= nzv) continue;
+          const ni = ngz * nyv * nxv + ngy * nxv + ngx;
+          if (visited[ni] || !hasOrient[ni]) continue;
+
+          // Check if neighbor normal is similar to current region
+          const dot = orientNx[idx] * orientNx[ni] + orientNy[idx] * orientNy[ni] + orientNz[idx] * orientNz[ni];
+          if (dot >= FLAT_DETECTION_THRESHOLD) {
+            visited[ni] = 1;
+            queue.push(ni);
+            sumNx += canonicalNorm[ni * 3];
+            sumNy += canonicalNorm[ni * 3 + 1];
+            sumNz += canonicalNorm[ni * 3 + 2];
+            count++;
+          }
+        }
+      }
+
+      // Apply canonical normal to entire group (including single voxels)
+      const cnl = Math.hypot(sumNx, sumNy, sumNz) || 1;
+      const cnx = sumNx / cnl;
+      const cny = sumNy / cnl;
+      const cnz = sumNz / cnl;
+
+      for (let i = 0; i < queue.length; i++) {
+        const idx = queue[i];
+        orientNx[idx] = cnx;
+        orientNy[idx] = cny;
+        orientNz[idx] = cnz;
+      }
+    };
+
+    // Canonicalize all flat groups
+    let groupsProcessed = 0;
+    for (let idx = 0; idx < cellCount; idx++) {
+      if (!hasOrient[idx] || visited[idx]) continue;
+      canonicalizeGroup(idx);
+      groupsProcessed++;
+    }
+
+    // Copy canonicalized orientNx/orientNy/orientNz to smNx/smNy/smNz for use in rotation calculation
     for (let idx = 0; idx < cellCount; idx++) {
       if (!hasOrient[idx]) continue;
-      let sx = orientNx[idx];
-      let sy = orientNy[idx];
-      let sz = orientNz[idx];
-      let w = 1;
-      const gz = Math.floor(idx / (nyv * nxv));
-      const rem = idx % (nyv * nxv);
-      const gy = Math.floor(rem / nxv);
-      const gx = rem % nxv;
-      const add = (tx: number, ty: number, tz: number) => {
-        if (tx < 0 || ty < 0 || tz < 0 || tx >= nxv || ty >= nyv || tz >= nzv) return;
-        const ni = tz * nyv * nxv + ty * nxv + tx;
-        if (!hasOrient[ni]) return;
-        sx += orientNx[ni];
-        sy += orientNy[ni];
-        sz += orientNz[ni];
-        w += 1;
-      };
-      add(gx + 1, gy, gz);
-      add(gx - 1, gy, gz);
-      add(gx, gy + 1, gz);
-      add(gx, gy - 1, gz);
-      add(gx, gy, gz + 1);
-      add(gx, gy, gz - 1);
-      const inv = 1 / w;
-      smNx[idx] = sx * inv;
-      smNy[idx] = sy * inv;
-      smNz[idx] = sz * inv;
+      smNx[idx] = orientNx[idx];
+      smNy[idx] = orientNy[idx];
+      smNz[idx] = orientNz[idx];
     }
   }
 
@@ -853,9 +998,10 @@ function voxelize(
         const state = grid[idx];
         if (state === 0) continue;
 
-        const posX = gridOffset[0] + (gx+0.5)*voxelSize;
-        const posY = gridOffset[1] + (gy+0.5)*voxelSize;
-        const posZ = gridOffset[2] + (gz+0.5)*voxelSize;
+        // Calculate from center outward to avoid floating point accumulation bias
+        const posX = bboxCenter[0] + (gx - gridX*0.5 + 0.5)*voxelSize;
+        const posY = bboxCenter[1] + (gy - gridY*0.5 + 0.5)*voxelSize;
+        const posZ = bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*voxelSize;
 
         let color: [number, number, number];
         if (voxelColors.has(idx)) {
@@ -898,15 +1044,9 @@ function voxelize(
           surfNormal = [nx, ny, nz];
         }
 
-        let half = inscribedCubeHalfEdge(cellHalf, quaternion);
-        if (state === 1 && curvedVoxels) {
-          const pack = 1 + 0.22 * (1 - Math.min(1, curvature * 1.1));
-          half *= pack;
-          half = Math.min(half, cellHalf * 1.06);
-        }
-        if (state === 1 && curvature > 0) {
-          half *= 1 - 0.05 * Math.min(1, curvature);
-        }
+        // Inscribed cube fills the cell AABB exactly when rotated;
+        // ×1.06 gives slight visual tightness without neighbour overlap.
+        const half = inscribedCubeHalfEdge(cellHalf, quaternion) * 1.06;
         const size = Math.max(half * 2, cellHalf * 0.62);
 
         voxels.push({

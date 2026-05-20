@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import styles from './page.module.css';
 import { parseModelFile, voxelizeGeometryAsync } from '@/lib/voxelizer';
 import { GLBDebugPanel } from '@/components/GLBDebugPanel';
@@ -62,6 +63,7 @@ export default function Home() {
   const [surfaceVoxels, setSurfaceVoxels] = useState(true);
   const [interiorFill, setInteriorFill] = useState(true);
   const [curvedVoxels, setCurvedVoxels] = useState(true);
+  const [voxelMethod, setVoxelMethod] = useState<'proximity' | 'triangle-aabb' | 'conservative' | 'sdf'>('proximity');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -97,13 +99,14 @@ export default function Home() {
         surface: surfaceVoxels,
         interior: interiorFill,
         curvedVoxels,
+        method: voxelMethod,
       });
       const list = Array.isArray(result) ? result : [];
       setVoxels(list);
       const mode = [];
       if (surfaceVoxels) mode.push('Surface');
       if (interiorFill) mode.push('Interior');
-      setStatus(`Preview: ${list.length} voxels (${mode.join(' + ') || 'None'})`);
+      setStatus(`Preview: ${list.length} voxels (${mode.join(' + ') || 'None'} · ${voxelMethod})`);
       setShowVoxels(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error voxelizing');
@@ -124,6 +127,7 @@ export default function Home() {
         surface: surfaceVoxels,
         interior: interiorFill,
         curvedVoxels,
+        method: voxelMethod,
       }, (p) => {
         setProgress(p);
       });
@@ -132,7 +136,7 @@ export default function Home() {
       const mode = [];
       if (surfaceVoxels) mode.push('Surface');
       if (interiorFill) mode.push('Interior');
-      setStatus(`Generated: ${list.length} voxels (${mode.join(' + ') || 'None'})`);
+      setStatus(`Generated: ${list.length} voxels (${mode.join(' + ') || 'None'} · ${voxelMethod})`);
       setShowVoxels(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error voxelizing');
@@ -203,6 +207,22 @@ export default function Home() {
         </nav>
 
         <div className={styles.spacer} />
+
+        <Link href="/panel" style={{
+          display: 'inline-flex', alignItems: 'center',
+          padding: '6px 14px',
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: '999px',
+          color: 'rgba(255,255,255,0.6)',
+          fontSize: '12px',
+          fontWeight: 500,
+          textDecoration: 'none',
+          position: 'relative',
+          zIndex: 1,
+        }}>
+          Panel Surface →
+        </Link>
 
         <button
           onClick={toggleTheme}
@@ -356,6 +376,36 @@ export default function Home() {
                 />
                 <label htmlFor="curved">Curved surface voxels (rotation)</label>
               </div>
+            </section>
+
+            {/* Algorithm */}
+            <section className={styles.section}>
+              <div className={styles.sectionLabel}>Algorithm</div>
+              <div className={styles.methodGrid}>
+                {([
+                  { id: 'proximity', label: 'Proximity', desc: 'Distance threshold — fast, default' },
+                  { id: 'triangle-aabb', label: 'Triangle–AABB', desc: 'SAT intersection — geometrically exact' },
+                  { id: 'conservative', label: 'Conservative', desc: 'Dilated AABB — no surface gaps' },
+                  { id: 'sdf', label: 'SDF', desc: 'Signed distance field — thinnest shell' },
+                ] as const).map(m => (
+                  <button
+                    key={m.id}
+                    className={`${styles.methodBtn} ${voxelMethod === m.id ? styles.methodBtnActive : ''}`}
+                    onClick={() => setVoxelMethod(m.id)}
+                    title={m.desc}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <p className={styles.hint}>
+                {{
+                  'proximity': 'Distance to surface ≤ band × voxelSize. Fast and reliable.',
+                  'triangle-aabb': 'SAT test: marks voxels whose AABB the triangle physically intersects.',
+                  'conservative': 'SAT with expanded AABB (×1.15) — guarantees full surface coverage.',
+                  'sdf': 'Marks voxels within ½ cell of nearest surface. Sharpest single-cell shell.',
+                }[voxelMethod]}
+              </p>
             </section>
 
             {/* Actions */}
