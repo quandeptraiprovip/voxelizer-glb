@@ -71,8 +71,6 @@ export default function Home() {
   const [generateDone, setGenerateDone] = useState(false);
 
   const [targetBlocks, setTargetBlocks] = useState(250);
-  const [blockSize, setBlockSize] = useState(1.0);
-  const [gapRatio, setGapRatio] = useState(0.02);
   const [surfaceVoxels, setSurfaceVoxels] = useState(true);
   const [interiorFill, setInteriorFill] = useState(true);
   const [curvedVoxels, setCurvedVoxels] = useState(true);
@@ -110,7 +108,7 @@ export default function Home() {
     setStatus('Voxelizing (quick preview)…');
     try {
       const result = await voxelizeGeometryAsync(
-        parsedGeometry, Math.min(targetBlocks, 1000), blockSize, gapRatio,
+        parsedGeometry, Math.min(targetBlocks, 1000),
         { surface: surfaceVoxels, interior: interiorFill, curvedVoxels }
       );
       const list = Array.isArray(result) ? result : [];
@@ -136,16 +134,15 @@ export default function Home() {
     setStatus('Generating voxels…');
     try {
       const result = await voxelizeGeometryAsync(
-        parsedGeometry, targetBlocks, blockSize, gapRatio,
+        parsedGeometry, targetBlocks,
         { surface: surfaceVoxels, interior: interiorFill, curvedVoxels },
         (p) => setProgress(p)
       );
-      const list = Array.isArray(result) ? result : [];
+      let list = Array.isArray(result) ? result : [];
+      // Auto-remove interior voxels, keep only surface
+      list = list.filter(v => v.type !== 'interior');
       setVoxels(list);
-      const mode = [];
-      if (surfaceVoxels) mode.push('Surface');
-      if (interiorFill) mode.push('Interior');
-      setStatus(`Generated: ${list.length.toLocaleString()} voxels (${mode.join(' + ') || 'None'})`);
+      setStatus(`Generated: ${list.length.toLocaleString()} surface voxels`);
       setShowVoxels(true);
       setGenerateDone(true);
       setTimeout(() => setGenerateDone(false), 2200);
@@ -158,13 +155,6 @@ export default function Home() {
     }
   };
 
-  const handleRemoveInterior = () => {
-    if (!voxels.length) return;
-    const surfaceOnly = voxels.filter(v => v.type !== 'interior');
-    setVoxels(surfaceOnly);
-    const removed = voxels.length - surfaceOnly.length;
-    setStatus(`Removed ${removed} interior voxels. Kept ${surfaceOnly.length}.`);
-  };
 
   const handleExport = () => {
     if (!voxels.length) return;
@@ -296,66 +286,44 @@ export default function Home() {
               {/* Numeric params */}
               <div className={styles.paramSection}>
                 <div className={styles.paramRow}>
-                  <label htmlFor="targetBlocks">Target blocks</label>
+                  <label htmlFor="targetBlocks">Target blocks: {targetBlocks}</label>
+                  <div className={styles.sliderContainer}>
+                    <div className={styles.slider} style={{ '--val': `${((targetBlocks - 10) / (2000 - 10)) * 100}%` } as any}>
+                      <div className={styles.sliderTrack} />
+                      <div className={styles.sliderFill} />
+                      <div
+                        className={styles.sliderThumb}
+                        onMouseDown={(e) => {
+                          const slider = e.currentTarget.closest(`.${styles.slider}`);
+                          const rect = slider!.getBoundingClientRect();
+                          const handleMove = (move: MouseEvent) => {
+                            const x = move.clientX - rect.left;
+                            const percent = Math.max(0, Math.min(1, x / rect.width));
+                            const newVal = Math.round(10 + percent * (2000 - 10));
+                            setTargetBlocks(newVal);
+                          };
+                          const handleUp = () => {
+                            document.removeEventListener('mousemove', handleMove);
+                            document.removeEventListener('mouseup', handleUp);
+                          };
+                          document.addEventListener('mousemove', handleMove);
+                          document.addEventListener('mouseup', handleUp);
+                        }}
+                      />
+                    </div>
+                  </div>
                   <input
                     id="targetBlocks"
                     type="number"
+                    min="10"
+                    max="2000"
                     value={targetBlocks}
-                    onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v)) setTargetBlocks(v); }}
-                  />
-                </div>
-                <div className={styles.paramRow}>
-                  <label htmlFor="blockSize">Block size</label>
-                  <input
-                    id="blockSize"
-                    type="number"
-                    step="0.1"
-                    value={blockSize}
-                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setBlockSize(v); }}
-                  />
-                </div>
-                <div className={styles.paramRow}>
-                  <label htmlFor="gapRatio">Gap ratio</label>
-                  <input
-                    id="gapRatio"
-                    type="number"
-                    step="0.05"
-                    value={gapRatio}
-                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setGapRatio(v); }}
+                    onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v)) setTargetBlocks(Math.max(10, Math.min(2000, v))); }}
                   />
                 </div>
               </div>
 
-              {/* Mode toggles */}
-              <div className={styles.toggleSection}>
-                {[
-                  { id: 'surface', label: 'Surface', val: surfaceVoxels, set: setSurfaceVoxels },
-                  { id: 'interior', label: 'Interior', val: interiorFill, set: setInteriorFill },
-                  { id: 'curved', label: 'Curved', val: curvedVoxels, set: setCurvedVoxels },
-                ].map(({ id, label, val, set }) => (
-                  <label key={id} className={`${styles.toggle} ${val ? styles.toggleOn : ''}`}>
-                    <input type="checkbox" checked={val} onChange={e => set(e.target.checked)} />
-                    {label}
-                  </label>
-                ))}
-              </div>
 
-              {/* Secondary actions */}
-              <div className={styles.cardActions}>
-                <button onClick={handlePreview} disabled={!canAct} className={styles.actionBtn}>
-                  {loading ? '…' : 'Quick Preview'}
-                </button>
-                {voxels.length > 0 && (
-                  <>
-                    <button onClick={handleRemoveInterior} className={styles.actionBtn}>
-                      Remove Interior
-                    </button>
-                    <button onClick={handleExport} className={`${styles.actionBtn} ${styles.actionBtnAccent}`}>
-                      Export JSON
-                    </button>
-                  </>
-                )}
-              </div>
 
               {/* Status / progress */}
               {status && !loading && (
@@ -387,21 +355,28 @@ export default function Home() {
         </div>
 
         {parsedGeometry && (
-          <button
-            onClick={handleGenerate}
-            disabled={!canAct}
-            className={`${styles.generateBtn} ${generateDone ? styles.generateDone : ''} ${loading ? styles.generateLoading : ''}`}
-          >
-            <span className={styles.generateBtnInner}>
-              {loading ? (
-                <><span className={styles.spinnerDots}><i /><i /><i /></span>&nbsp;Generating</>
-              ) : generateDone ? (
-                <>✓&nbsp;Done</>
-              ) : (
-                'Generate'
-              )}
-            </span>
-          </button>
+          <div className={styles.bottomButtons}>
+            {voxels.length > 0 && (
+              <button onClick={handleExport} className={`${styles.generateBtn} ${styles.secondaryBtn}`}>
+                Export JSON
+              </button>
+            )}
+            <button
+              onClick={handleGenerate}
+              disabled={!canAct}
+              className={`${styles.generateBtn} ${generateDone ? styles.generateDone : ''} ${loading ? styles.generateLoading : ''}`}
+            >
+              <span className={styles.generateBtnInner}>
+                {loading ? (
+                  <><span className={styles.spinnerDots}><i /><i /><i /></span>&nbsp;Generating</>
+                ) : generateDone ? (
+                  <>✓&nbsp;Done</>
+                ) : (
+                  'Generate'
+                )}
+              </span>
+            </button>
+          </div>
         )}
 
         <div className={styles.hudPill}>
