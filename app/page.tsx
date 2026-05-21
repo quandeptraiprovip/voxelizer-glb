@@ -1,50 +1,63 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import styles from './page.module.css';
 import { parseModelFile, voxelizeGeometryAsync } from '@/lib/voxelizer';
-import { GLBDebugPanel } from '@/components/GLBDebugPanel';
 
-const VoxelViewer = dynamic(() => import('@/components/VoxelViewer'), {
-  ssr: false,
-  loading: () => (
-    <div className={styles.placeholder}>
-      <div className={styles.placeholderIcon}>◇</div>
-      <div className={styles.placeholderTitle}>Loading 3D viewer…</div>
-    </div>
-  ),
-});
-
+const VoxelViewer = dynamic(() => import('@/components/VoxelViewer'), { ssr: false });
 const ModelPreview = dynamic(() => import('@/components/ModelPreview'), {
   ssr: false,
-  loading: () => <div className={styles.previewLoading}>Loading preview…</div>,
+  loading: () => <div className={styles.previewLoading}>Loading…</div>,
 });
 
-type Stage = 'source' | 'model' | 'voxelize' | 'export';
 type Theme = 'dark' | 'light';
+type Stage = 'source' | 'model' | 'voxelize' | 'export';
+
+function useDraggable(initial: { x: number; y: number }) {
+  const [pos, setPos] = useState(initial);
+  const r = useRef({ dragging: false, ox: 0, oy: 0, x: initial.x, y: initial.y });
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    r.current.dragging = true;
+    r.current.ox = e.clientX - r.current.x;
+    r.current.oy = e.clientY - r.current.y;
+    e.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!r.current.dragging) return;
+      r.current.x = e.clientX - r.current.ox;
+      r.current.y = e.clientY - r.current.oy;
+      setPos({ x: r.current.x, y: r.current.y });
+    };
+    const up = () => { r.current.dragging = false; };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, []);
+
+  return { pos, onDragStart };
+}
 
 export default function Home() {
   const [theme, setTheme] = useState<Theme>('dark');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Load saved theme from localStorage
     const saved = (localStorage.getItem('theme') as Theme) || 'dark';
     setTheme(saved);
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (mounted) {
-      localStorage.setItem('theme', theme);
-    }
+    if (mounted) localStorage.setItem('theme', theme);
   }, [theme, mounted]);
-
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedGeometry, setParsedGeometry] = useState<any>(null);
@@ -55,28 +68,29 @@ export default function Home() {
   const [error, setError] = useState('');
   const [showVoxels, setShowVoxels] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [generateDone, setGenerateDone] = useState(false);
 
   const [targetBlocks, setTargetBlocks] = useState(250);
   const [blockSize, setBlockSize] = useState(1.0);
   const [gapRatio, setGapRatio] = useState(0.02);
-
   const [surfaceVoxels, setSurfaceVoxels] = useState(true);
   const [interiorFill, setInteriorFill] = useState(true);
   const [curvedVoxels, setCurvedVoxels] = useState(true);
-  const [voxelMethod, setVoxelMethod] = useState<'proximity' | 'triangle-aabb' | 'conservative' | 'sdf'>('proximity');
+
+  const sourceCard = useDraggable({ x: 24, y: 80 });
+  const paramCard = useDraggable({ x: 340, y: 80 });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
-
     setFile(selected);
     setError('');
     setVoxels([]);
     setShowVoxels(false);
     setParsedGeometry(null);
     setParseLoading(true);
+    setGenerateDone(false);
     setStatus('Parsing model…');
-
     try {
       const parsed = await parseModelFile(selected);
       setParsedGeometry(parsed.geometry);
@@ -95,18 +109,16 @@ export default function Home() {
     setError('');
     setStatus('Voxelizing (quick preview)…');
     try {
-      const result = await voxelizeGeometryAsync(parsedGeometry, Math.min(targetBlocks, 1000), blockSize, gapRatio, {
-        surface: surfaceVoxels,
-        interior: interiorFill,
-        curvedVoxels,
-        method: voxelMethod,
-      });
+      const result = await voxelizeGeometryAsync(
+        parsedGeometry, Math.min(targetBlocks, 1000), blockSize, gapRatio,
+        { surface: surfaceVoxels, interior: interiorFill, curvedVoxels }
+      );
       const list = Array.isArray(result) ? result : [];
       setVoxels(list);
       const mode = [];
       if (surfaceVoxels) mode.push('Surface');
       if (interiorFill) mode.push('Interior');
-      setStatus(`Preview: ${list.length} voxels (${mode.join(' + ') || 'None'} · ${voxelMethod})`);
+      setStatus(`Preview: ${list.length} voxels (${mode.join(' + ') || 'None'})`);
       setShowVoxels(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error voxelizing');
@@ -123,21 +135,20 @@ export default function Home() {
     setProgress(0);
     setStatus('Generating voxels…');
     try {
-      const result = await voxelizeGeometryAsync(parsedGeometry, targetBlocks, blockSize, gapRatio, {
-        surface: surfaceVoxels,
-        interior: interiorFill,
-        curvedVoxels,
-        method: voxelMethod,
-      }, (p) => {
-        setProgress(p);
-      });
+      const result = await voxelizeGeometryAsync(
+        parsedGeometry, targetBlocks, blockSize, gapRatio,
+        { surface: surfaceVoxels, interior: interiorFill, curvedVoxels },
+        (p) => setProgress(p)
+      );
       const list = Array.isArray(result) ? result : [];
       setVoxels(list);
       const mode = [];
       if (surfaceVoxels) mode.push('Surface');
       if (interiorFill) mode.push('Interior');
-      setStatus(`Generated: ${list.length} voxels (${mode.join(' + ') || 'None'} · ${voxelMethod})`);
+      setStatus(`Generated: ${list.length.toLocaleString()} voxels (${mode.join(' + ') || 'None'})`);
       setShowVoxels(true);
+      setGenerateDone(true);
+      setTimeout(() => setGenerateDone(false), 2200);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error voxelizing');
       setStatus('');
@@ -152,7 +163,7 @@ export default function Home() {
     const surfaceOnly = voxels.filter(v => v.type !== 'interior');
     setVoxels(surfaceOnly);
     const removed = voxels.length - surfaceOnly.length;
-    setStatus(`Removed ${removed} interior voxels. Kept ${surfaceOnly.length} surface voxels.`);
+    setStatus(`Removed ${removed} interior voxels. Kept ${surfaceOnly.length}.`);
   };
 
   const handleExport = () => {
@@ -168,17 +179,9 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
-  const canVoxelize = !!parsedGeometry && !loading && !parseLoading;
+  const canAct = !!parsedGeometry && !loading && !parseLoading;
   const busy = loading || parseLoading;
-
-  const stage: Stage = voxels.length > 0
-    ? 'export'
-    : parsedGeometry
-      ? 'voxelize'
-      : file
-        ? 'model'
-        : 'source';
-
+  const stage: Stage = voxels.length > 0 ? 'export' : parsedGeometry ? 'voxelize' : file ? 'model' : 'source';
   const crumbs: { id: Stage; label: string }[] = [
     { id: 'source', label: 'SOURCE' },
     { id: 'model', label: 'MODEL' },
@@ -188,324 +191,224 @@ export default function Home() {
 
   return (
     <div className={styles.container} data-theme={theme}>
-      {/* ===== TOP BAR ===== */}
+
+      {/* ── Full-screen 3D viewport ── */}
+      <div className={styles.viewport}>
+        {showVoxels && voxels.length > 0 ? (
+          <VoxelViewer voxels={voxels} progress={progress} isLoading={loading} />
+        ) : (
+          <div className={styles.viewportEmpty}>
+            <div className={styles.viewportIcon}>◇</div>
+            <div className={styles.viewportTitle}>Voxel Viewport</div>
+            <div className={styles.viewportHint}>Upload a model and press Generate to begin</div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Top bar ── */}
       <header className={styles.topbar}>
         <div className={styles.brand}>
           Voxelizer
           <span className={styles.brandTag}>web</span>
         </div>
-
         <nav className={styles.crumbs}>
           {crumbs.map((c) => (
-            <span
-              key={c.id}
-              className={`${styles.crumb} ${c.id === stage ? styles.crumbActive : ''}`}
-            >
+            <span key={c.id} className={`${styles.crumb} ${c.id === stage ? styles.crumbActive : ''}`}>
               {c.label}
             </span>
           ))}
         </nav>
-
         <div className={styles.spacer} />
-
-        <Link href="/panel" style={{
-          display: 'inline-flex', alignItems: 'center',
-          padding: '6px 14px',
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: '999px',
-          color: 'rgba(255,255,255,0.6)',
-          fontSize: '12px',
-          fontWeight: 500,
-          textDecoration: 'none',
-          position: 'relative',
-          zIndex: 1,
-        }}>
-          Panel Surface →
-        </Link>
-
+        <Link href="/panel" className={styles.panelLink}>Panel Surface →</Link>
         <button
-          onClick={toggleTheme}
+          onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
           className={styles.themeToggle}
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          title="Toggle theme"
         >
           {theme === 'dark' ? '☀️' : '🌙'}
         </button>
-
         <div className={styles.topStatus}>
           <span className={styles.statusPill}>
             <span className={`${styles.dot} ${busy ? styles.dotBusy : !parsedGeometry ? styles.dotIdle : ''}`} />
             {busy ? 'Working' : parsedGeometry ? 'Ready' : 'Idle'}
           </span>
           {voxels.length > 0 && (
-            <span className={styles.statusPill}>
-              {voxels.length.toLocaleString()} voxels
-            </span>
+            <span className={styles.statusPill}>{voxels.length.toLocaleString()} voxels</span>
           )}
         </div>
       </header>
 
-      {/* ===== MAIN LAYOUT ===== */}
-      <main className={styles.layout}>
-        {/* Sidebar */}
-        <aside className={styles.sidebar}>
-          <div className={styles.sidebarHeader}>
-            <div className={styles.sidebarTitle}>Controls</div>
+      {/* ── Source Model card (always visible, draggable) ── */}
+      <div
+        className={styles.cardOuter}
+        style={{ transform: `translate(${sourceCard.pos.x}px, ${sourceCard.pos.y}px)` }}
+      >
+        <div className={`${styles.floatCard} ${styles.glassAppear}`}>
+          <div className={styles.cardHandle} onMouseDown={sourceCard.onDragStart}>
+            <span className={styles.cardTitle}>Source Model</span>
+            <span className={styles.dragDots}>⠿</span>
           </div>
-
-          <div className={styles.sidebarScroll}>
-            {/* Upload */}
-            <section className={styles.section}>
-              <div className={styles.sectionLabel}>Source Model</div>
-              <div className={styles.dropzone}>
-                <div className={styles.dropzoneIcon}>↑</div>
-                <div className={styles.dropzoneTitle}>Drop or click to upload</div>
-                <div className={styles.dropzoneDesc}>
-                  Convert a 3D mesh into voxels
-                </div>
-                <div className={styles.dropzoneTypes}>
-                  <span>GLB</span>
-                  <span>OBJ</span>
-                  <span>STL</span>
-                  <span>GLTF</span>
-                </div>
-                <input
-                  type="file"
-                  accept=".glb,.obj,.stl,.gltf"
-                  onChange={handleFileChange}
-                  className={styles.fileInput}
-                />
+          <div className={styles.cardBody}>
+            <div className={styles.dropzone}>
+              <div className={styles.dropzoneIcon}>↑</div>
+              <div className={styles.dropzoneTitle}>Drop or click to upload</div>
+              <div className={styles.dropzoneDesc}>Convert a 3D mesh into voxels</div>
+              <div className={styles.dropzoneTypes}>
+                <span>GLB</span><span>OBJ</span><span>STL</span><span>GLTF</span><span>FBX</span>
               </div>
-              {file && <div className={styles.fileName} title={file.name}>{file.name}</div>}
-            </section>
-
-            {/* Preview */}
-            {parsedGeometry && (
-              <section className={styles.section}>
-                <div className={styles.sectionLabel}>Mesh Preview</div>
-                <div className={styles.previewWrap}>
-                  <ModelPreview geometry={parsedGeometry} />
-                </div>
-              </section>
-            )}
-
-            {/* Parameters */}
-            <section className={styles.section}>
-              <div className={styles.sectionLabel}>Parameters</div>
-
-              <div className={styles.paramInput}>
-                <label htmlFor="targetBlocks">Target blocks</label>
-                <input
-                  id="targetBlocks"
-                  type="number"
-                  value={targetBlocks}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    if (!isNaN(val)) {
-                      setTargetBlocks(val);
-                    }
-                  }}
-                />
-              </div>
-
-              <div className={styles.paramInput}>
-                <label htmlFor="blockSize">Block size</label>
-                <input
-                  id="blockSize"
-                  type="number"
-                  step="0.1"
-                  value={blockSize}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) {
-                      setBlockSize(val);
-                    }
-                  }}
-                />
-              </div>
-
-              <div className={styles.paramInput}>
-                <label htmlFor="gapRatio">Gap ratio</label>
-                <input
-                  id="gapRatio"
-                  type="number"
-                  step="0.05"
-                  value={gapRatio}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (!isNaN(val)) {
-                      setGapRatio(val);
-                    }
-                  }}
-                />
-              </div>
-            </section>
-
-            {/* Mode */}
-            <section className={styles.section}>
-              <div className={styles.sectionLabel}>Voxelization Mode</div>
-              <div className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  id="surface"
-                  checked={surfaceVoxels}
-                  onChange={(e) => setSurfaceVoxels(e.target.checked)}
-                />
-                <label htmlFor="surface">Surface voxelization</label>
-              </div>
-              <div className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  id="interior"
-                  checked={interiorFill}
-                  onChange={(e) => setInteriorFill(e.target.checked)}
-                />
-                <label htmlFor="interior">Interior fill (solid volume)</label>
-              </div>
-              {!interiorFill && (
-                <p className={styles.hint}>
-                  Surface shell only — no volume fill. Regenerate after changing this option.
-                </p>
-              )}
-              <div className={styles.checkbox}>
-                <input
-                  type="checkbox"
-                  id="curved"
-                  checked={curvedVoxels}
-                  onChange={(e) => setCurvedVoxels(e.target.checked)}
-                />
-                <label htmlFor="curved">Curved surface voxels (rotation)</label>
-              </div>
-            </section>
-
-            {/* Algorithm */}
-            <section className={styles.section}>
-              <div className={styles.sectionLabel}>Algorithm</div>
-              <div className={styles.methodGrid}>
-                {([
-                  { id: 'proximity', label: 'Proximity', desc: 'Distance threshold — fast, default' },
-                  { id: 'triangle-aabb', label: 'Triangle–AABB', desc: 'SAT intersection — geometrically exact' },
-                  { id: 'conservative', label: 'Conservative', desc: 'Dilated AABB — no surface gaps' },
-                  { id: 'sdf', label: 'SDF', desc: 'Signed distance field — thinnest shell' },
-                ] as const).map(m => (
-                  <button
-                    key={m.id}
-                    className={`${styles.methodBtn} ${voxelMethod === m.id ? styles.methodBtnActive : ''}`}
-                    onClick={() => setVoxelMethod(m.id)}
-                    title={m.desc}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-              <p className={styles.hint}>
-                {{
-                  'proximity': 'Distance to surface ≤ band × voxelSize. Fast and reliable.',
-                  'triangle-aabb': 'SAT test: marks voxels whose AABB the triangle physically intersects.',
-                  'conservative': 'SAT with expanded AABB (×1.15) — guarantees full surface coverage.',
-                  'sdf': 'Marks voxels within ½ cell of nearest surface. Sharpest single-cell shell.',
-                }[voxelMethod]}
-              </p>
-            </section>
-
-            {/* Actions */}
-            <section className={styles.section}>
-              <div className={styles.sectionLabel}>Actions</div>
-              <div className={styles.buttonGroup}>
-                <button onClick={handlePreview} disabled={!canVoxelize} className={styles.btn}>
-                  {loading ? 'Working…' : 'Quick Preview'}
-                </button>
-                <button
-                  onClick={handleGenerate}
-                  disabled={!canVoxelize}
-                  className={`${styles.btn} ${styles.btnPrimary}`}
-                >
-                  {loading ? 'Working…' : 'Generate'}
-                </button>
-              </div>
-
-              {voxels.length > 0 && (
-                <>
-                  <button onClick={handleRemoveInterior} className={styles.btnExport} title="Remove all interior voxels, keep only surface">
-                    Remove Interior
-                  </button>
-                  <button onClick={handleExport} className={styles.btnExport}>
-                    Export JSON
-                  </button>
-                </>
-              )}
-            </section>
-
-            {/* Status banners */}
-            {(status || parseLoading || error || voxels.length > 0) && (
-              <section className={styles.section}>
-                {(status || parseLoading) && (
-                  <div className={`${styles.banner} ${styles.bannerStatus}`}>
-                    {parseLoading ? 'Parsing model…' : status}
-                  </div>
-                )}
-                {error && (
-                  <div className={`${styles.banner} ${styles.bannerError}`}>{error}</div>
-                )}
-                {voxels.length > 0 && !error && (
-                  <div className={`${styles.banner} ${styles.bannerInfo}`}>
-                    {voxels.length.toLocaleString()} voxels created
-                  </div>
-                )}
-                {loading && progress > 0 && (
-                  <div className={styles.progressContainer}>
-                    <div className={styles.progressBar}>
-                      <div
-                        className={styles.progressFill}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                    <div className={styles.progressText}>{Math.round(progress)}%</div>
-                  </div>
-                )}
-              </section>
-            )}
-          </div>
-        </aside>
-
-        {/* Viewer */}
-        <section className={styles.viewerPanel}>
-          {showVoxels && voxels.length > 0 ? (
-            <VoxelViewer voxels={voxels} progress={progress} isLoading={loading} />
-          ) : (
-            <div className={styles.placeholder}>
-              <div className={styles.placeholderIcon}>◇</div>
-              <div className={styles.placeholderTitle}>Voxel viewport</div>
-              <div className={styles.placeholderDesc}>
-                Upload a model, tune parameters, and press Generate to render the voxelized output here.
-              </div>
+              <input
+                type="file"
+                accept=".glb,.obj,.stl,.gltf,.fbx"
+                onChange={handleFileChange}
+                className={styles.fileInput}
+              />
             </div>
-          )}
-        </section>
-      </main>
-
-      {/* ===== HUD ===== */}
-      <div className={styles.hud}>
-        <div className={styles.hudItem}>
-          <span className={styles.kbd}>Drag</span> orbit
-        </div>
-        <div className={styles.hudItem}>
-          <span className={styles.kbd}>Scroll</span> zoom
-        </div>
-        <div className={styles.hudItem}>
-          <b>Voxelizer</b> Spatial Glass
+            {file && <div className={styles.fileName} title={file.name}>{file.name}</div>}
+            {parseLoading && (
+              <div className={styles.cardStatus}>
+                <span className={styles.spinnerDots}><i /><i /><i /></span>
+                Parsing model…
+              </div>
+            )}
+            {error && <div className={styles.cardError}>{error}</div>}
+          </div>
         </div>
       </div>
 
-      {/* ===== DEBUG PANEL ===== */}
-      {/* <div className={styles.debugPanelContainer}>
-        <details className={styles.debugDetails}>
-          <summary className={styles.debugSummary}>🔍 GLB Debug Analyzer</summary>
-          <div className={styles.debugContent}>
-            <GLBDebugPanel />
+      {/* ── Parameters + Mesh Preview card (appears when model is loaded) ── */}
+      {parsedGeometry && (
+        <div
+          className={styles.cardOuter}
+          style={{ transform: `translate(${paramCard.pos.x}px, ${paramCard.pos.y}px)` }}
+        >
+          <div className={`${styles.floatCard} ${styles.floatCardWide} ${styles.glassCondense}`}>
+            <div className={styles.cardHandle} onMouseDown={paramCard.onDragStart}>
+              <span className={styles.cardTitle}>Parameters</span>
+              <span className={styles.dragDots}>⠿</span>
+            </div>
+            <div className={styles.cardBody}>
+
+              {/* Mesh preview */}
+              <div className={styles.previewWrap}>
+                <ModelPreview geometry={parsedGeometry} />
+              </div>
+
+              {/* Numeric params */}
+              <div className={styles.paramSection}>
+                <div className={styles.paramRow}>
+                  <label htmlFor="targetBlocks">Target blocks</label>
+                  <input
+                    id="targetBlocks"
+                    type="number"
+                    value={targetBlocks}
+                    onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v)) setTargetBlocks(v); }}
+                  />
+                </div>
+                <div className={styles.paramRow}>
+                  <label htmlFor="blockSize">Block size</label>
+                  <input
+                    id="blockSize"
+                    type="number"
+                    step="0.1"
+                    value={blockSize}
+                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setBlockSize(v); }}
+                  />
+                </div>
+                <div className={styles.paramRow}>
+                  <label htmlFor="gapRatio">Gap ratio</label>
+                  <input
+                    id="gapRatio"
+                    type="number"
+                    step="0.05"
+                    value={gapRatio}
+                    onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) setGapRatio(v); }}
+                  />
+                </div>
+              </div>
+
+              {/* Mode toggles */}
+              <div className={styles.toggleSection}>
+                {[
+                  { id: 'surface', label: 'Surface', val: surfaceVoxels, set: setSurfaceVoxels },
+                  { id: 'interior', label: 'Interior', val: interiorFill, set: setInteriorFill },
+                  { id: 'curved', label: 'Curved', val: curvedVoxels, set: setCurvedVoxels },
+                ].map(({ id, label, val, set }) => (
+                  <label key={id} className={`${styles.toggle} ${val ? styles.toggleOn : ''}`}>
+                    <input type="checkbox" checked={val} onChange={e => set(e.target.checked)} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {/* Secondary actions */}
+              <div className={styles.cardActions}>
+                <button onClick={handlePreview} disabled={!canAct} className={styles.actionBtn}>
+                  {loading ? '…' : 'Quick Preview'}
+                </button>
+                {voxels.length > 0 && (
+                  <>
+                    <button onClick={handleRemoveInterior} className={styles.actionBtn}>
+                      Remove Interior
+                    </button>
+                    <button onClick={handleExport} className={`${styles.actionBtn} ${styles.actionBtnAccent}`}>
+                      Export JSON
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Status / progress */}
+              {status && !loading && (
+                <div className={voxels.length > 0 ? styles.cardInfo : styles.cardStatus}>
+                  {status}
+                </div>
+              )}
+              {loading && progress > 0 && (
+                <div className={styles.progressContainer}>
+                  <div className={styles.progressBar}>
+                    <div className={styles.progressFill} style={{ width: `${progress}%` }} />
+                  </div>
+                  <span className={styles.progressText}>{Math.round(progress)}%</span>
+                </div>
+              )}
+            </div>
           </div>
-        </details>
-      </div> */}
+        </div>
+      )}
+
+      {/* ── Bottom bar: HUD hints + Generate button ── */}
+      <div className={styles.bottomBar}>
+        <div className={styles.hudPill}>
+          <span className={styles.kbd}>Drag</span>
+          orbit
+          <span className={styles.hudSep} />
+          <span className={styles.kbd}>Scroll</span>
+          zoom
+        </div>
+
+        {parsedGeometry && (
+          <button
+            onClick={handleGenerate}
+            disabled={!canAct}
+            className={`${styles.generateBtn} ${generateDone ? styles.generateDone : ''} ${loading ? styles.generateLoading : ''}`}
+          >
+            <span className={styles.generateBtnInner}>
+              {loading ? (
+                <><span className={styles.spinnerDots}><i /><i /><i /></span>&nbsp;Generating</>
+              ) : generateDone ? (
+                <>✓&nbsp;Done</>
+              ) : (
+                'Generate'
+              )}
+            </span>
+          </button>
+        )}
+
+        <div className={styles.hudPill}>
+          <b>Voxelizer</b>&nbsp;Spatial Glass
+        </div>
+      </div>
+
     </div>
   );
 }

@@ -88,11 +88,87 @@ export async function parseModelFile(file: File): Promise<ParsedModel> {
     result = { geometry: parseOBJ(new TextDecoder().decode(uint8)), surfaceColor: '#cccccc' };
   } else if (ext.endsWith('.stl')) {
     result = { geometry: parseSTL(uint8), surfaceColor: '#cccccc' };
+  } else if (ext.endsWith('.fbx')) {
+    result = await parseFBX(arrayBuffer);
   } else {
     throw new Error('Unsupported file format');
   }
 
   return result;
+}
+
+async function parseFBX(data: ArrayBuffer): Promise<ParsedModel> {
+  const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
+  const loader = new FBXLoader();
+  const group = loader.parse(data, '');
+
+  const allPositions: number[] = [];
+  const allColors: number[] = [];
+  const allIndices: number[] = [];
+  let vertexOffset = 0;
+  const v = new THREE.Vector3();
+
+  group.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+    const geo = child.geometry as THREE.BufferGeometry;
+    const posAttr = geo.getAttribute('position');
+    if (!posAttr || posAttr.count === 0) return;
+
+    child.updateWorldMatrix(true, false);
+    const m = child.matrixWorld;
+
+    // Extract material color(s) — FBXLoader creates MeshPhong/LambertMaterial
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    const matColors: [number, number, number][] = mats.map((mat) => {
+      const c = (mat as any).color as THREE.Color | undefined;
+      return c ? [c.r, c.g, c.b] : [0.8, 0.8, 0.8];
+    });
+
+    // Groups map face indices to material slots
+    const groups = geo.groups.length > 0 ? geo.groups : [{ start: 0, count: Infinity, materialIndex: 0 }];
+
+    // Build per-vertex color from material, resolving via index buffer
+    const idx = geo.getIndex();
+    const vertexMat = new Uint8Array(posAttr.count); // materialIndex per vertex
+    for (const g of groups) {
+      const matIdx = g.materialIndex ?? 0;
+      const end = g.start + g.count;
+      if (idx) {
+        for (let i = g.start; i < Math.min(end, idx.count); i++) {
+          vertexMat[idx.getX(i)] = matIdx;
+        }
+      } else {
+        for (let i = g.start; i < Math.min(end, posAttr.count); i++) {
+          vertexMat[i] = matIdx;
+        }
+      }
+    }
+
+    for (let i = 0; i < posAttr.count; i++) {
+      v.fromBufferAttribute(posAttr, i).applyMatrix4(m);
+      allPositions.push(v.x, v.y, v.z);
+      const [r, g, b] = matColors[Math.min(vertexMat[i], matColors.length - 1)] ?? [0.8, 0.8, 0.8];
+      allColors.push(r, g, b);
+    }
+
+    if (idx) {
+      for (let i = 0; i < idx.count; i++) allIndices.push(idx.getX(i) + vertexOffset);
+    } else {
+      for (let i = 0; i < posAttr.count; i++) allIndices.push(i + vertexOffset);
+    }
+
+    vertexOffset += posAttr.count;
+  });
+
+  if (allPositions.length === 0) throw new Error('No meshes found in FBX file');
+
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
+  merged.setAttribute('color', new THREE.Float32BufferAttribute(allColors, 3));
+  merged.setIndex(allIndices);
+  merged.computeVertexNormals();
+
+  return { geometry: merged, surfaceColor: '#cccccc' };
 }
 
 async function parseGLB(data: Uint8Array): Promise<ParsedModel> {
@@ -1241,7 +1317,6 @@ interface VoxelizeOptions {
   interior?: boolean;
   /** Tilt voxels to follow surface normal; size auto-fits cell to avoid overlap */
   curvedVoxels?: boolean;
-  method?: 'proximity' | 'triangle-aabb' | 'conservative' | 'sdf';
 }
 
 export function voxelizeGeometry(
@@ -1525,7 +1600,7 @@ export async function voxelizeGeometryAsync(
         reject(new Error(`Worker error: ${error.message}`));
       };
 
-      const { surface = true, interior = true, curvedVoxels = true, method = 'proximity' } = options;
+      const { surface = true, interior = true, curvedVoxels = true } = options;
 
       const colorFlat = flattenAttributeVec3(geometry, 'color');
       const normalFlat = flattenAttributeVec3(geometry, 'normal');
@@ -1581,7 +1656,6 @@ export async function voxelizeGeometryAsync(
           surface,
           interior,
           curvedVoxels,
-          method,
         },
       }, [positionsBuffer, indicesBuffer, colorsBuffer, normalsBuffer]);
     } catch (error) {

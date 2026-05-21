@@ -62,6 +62,7 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
+  const edgeLinesRef = useRef<THREE.LineSegments | null>(null);
   const controlsRef = useRef<any>(null);
   const [voxelCount, setVoxelCount] = useState(0);
 
@@ -214,11 +215,17 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
 
     setVoxelCount(voxels.length);
 
-    // Remove old mesh
+    // Remove old mesh and edges
     if (meshRef.current) {
       sceneRef.current.remove(meshRef.current);
       meshRef.current.geometry.dispose();
       (meshRef.current.material as THREE.Material).dispose();
+    }
+    if (edgeLinesRef.current) {
+      sceneRef.current.remove(edgeLinesRef.current);
+      edgeLinesRef.current.geometry.dispose();
+      (edgeLinesRef.current.material as THREE.Material).dispose();
+      edgeLinesRef.current = null;
     }
 
     if (voxels.length === 0) return;
@@ -282,6 +289,69 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
 
     sceneRef.current.add(instancedMesh);
     meshRef.current = instancedMesh;
+
+    // Build merged edge lines (12 edges × 2 endpoints per voxel)
+    // Unit cube edge template: each pair of vertices is one edge
+    const EDGE_TMPL = new Float32Array([
+      // Bottom face
+      -0.5,-0.5,-0.5,  0.5,-0.5,-0.5,
+       0.5,-0.5,-0.5,  0.5,-0.5, 0.5,
+       0.5,-0.5, 0.5, -0.5,-0.5, 0.5,
+      -0.5,-0.5, 0.5, -0.5,-0.5,-0.5,
+      // Top face
+      -0.5, 0.5,-0.5,  0.5, 0.5,-0.5,
+       0.5, 0.5,-0.5,  0.5, 0.5, 0.5,
+       0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+      -0.5, 0.5, 0.5, -0.5, 0.5,-0.5,
+      // Vertical edges
+      -0.5,-0.5,-0.5, -0.5, 0.5,-0.5,
+       0.5,-0.5,-0.5,  0.5, 0.5,-0.5,
+       0.5,-0.5, 0.5,  0.5, 0.5, 0.5,
+      -0.5,-0.5, 0.5, -0.5, 0.5, 0.5,
+    ]); // 24 verts × 3 = 72 floats
+    const VERTS_PER_VOXEL = 24;
+    const allEdgeVerts = new Float32Array(voxels.length * VERTS_PER_VOXEL * 3);
+
+    const ePos = new THREE.Vector3();
+    const eQuat = new THREE.Quaternion();
+    const eScale = new THREE.Vector3();
+    const eMat = new THREE.Matrix4();
+    const eVec = new THREE.Vector3();
+
+    voxels.forEach((voxel, i) => {
+      const [px, py, pz] = voxel.position ?? [0, 0, 0];
+      const s = (Number.isFinite(voxel.size) ? voxel.size : 1) || 1;
+      ePos.set(px, py, pz);
+      if (voxel.quaternion) {
+        const [qx, qy, qz, qw] = voxel.quaternion;
+        eQuat.set(qx, qy, qz, qw);
+      } else {
+        eQuat.identity();
+      }
+      eScale.set(s, s, s);
+      eMat.compose(ePos, eQuat, eScale);
+
+      const base = i * VERTS_PER_VOXEL * 3;
+      for (let j = 0; j < VERTS_PER_VOXEL; j++) {
+        eVec.set(EDGE_TMPL[j * 3], EDGE_TMPL[j * 3 + 1], EDGE_TMPL[j * 3 + 2]);
+        eVec.applyMatrix4(eMat);
+        allEdgeVerts[base + j * 3]     = eVec.x;
+        allEdgeVerts[base + j * 3 + 1] = eVec.y;
+        allEdgeVerts[base + j * 3 + 2] = eVec.z;
+      }
+    });
+
+    const edgeGeo = new THREE.BufferGeometry();
+    edgeGeo.setAttribute('position', new THREE.BufferAttribute(allEdgeVerts, 3));
+    const edgeMat = new THREE.LineBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.25,
+      depthTest: true,
+    });
+    const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+    sceneRef.current.add(edgeLines);
+    edgeLinesRef.current = edgeLines;
 
     // Update camera far plane based on model size
     cameraRef.current.far = maxDim * 10;

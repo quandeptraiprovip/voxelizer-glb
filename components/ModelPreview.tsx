@@ -134,14 +134,14 @@ export default function ModelPreview({ geometry, width = 300, height = 160 }: Mo
         dl3.position.set(3, -4, 4);
         scene.add(dl3);
 
-        const camera = new THREE.PerspectiveCamera(40, w / h, 0.01, 100);
         const radius = mesh.userData.cameraDistance || 3.5;
+        const camera = new THREE.PerspectiveCamera(40, w / h, 0.01, radius * 10);
         let angle = 0;
 
         const animate = () => {
           animId = requestAnimationFrame(animate);
           angle += 0.008;
-          camera.position.set(Math.sin(angle) * radius, 1.3, Math.cos(angle) * radius);
+          camera.position.set(Math.sin(angle) * radius, radius * 0.4, Math.cos(angle) * radius);
           camera.lookAt(0, 0, 0);
           renderer!.render(scene, camera);
         };

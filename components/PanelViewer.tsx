@@ -111,18 +111,20 @@ function buildQuadsScene(
     wGeo.setAttribute('position', new THREE.Float32BufferAttribute(wPos, 3));
     add(new THREE.LineSegments(wGeo, new THREE.LineBasicMaterial(
       wire
-        ? { color: 0x00ccff }
-        : { color: 0xffffff, transparent: true, opacity: 0.35 },
+        ? { color: 0x00ccff, linewidth: 2 }
+        : { color: 0x88ccff, transparent: true, opacity: 0.75, linewidth: 1 },
     )));
 
-    // ── Vertex dots (wireframe mode only) ────────────────────────────────────
-    if (wire) {
-      const vPos: number[] = [];
-      for (const q of quads) for (const v of q.v) vPos.push(...v);
-      const vGeo = new THREE.BufferGeometry();
-      vGeo.setAttribute('position', new THREE.Float32BufferAttribute(vPos, 3));
-      add(new THREE.Points(vGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 4, sizeAttenuation: false })));
-    }
+    // ── Vertex dots (always visible) ────────────────────────────────────
+    const vPos: number[] = [];
+    for (const q of quads) for (const v of q.v) vPos.push(...v);
+    const vGeo = new THREE.BufferGeometry();
+    vGeo.setAttribute('position', new THREE.Float32BufferAttribute(vPos, 3));
+    add(new THREE.Points(vGeo, new THREE.PointsMaterial({
+      color: wire ? 0xffffff : 0x88ccff,
+      size: wire ? 5 : 3,
+      sizeAttenuation: false
+    })));
   }
 
   // ── Orphan triangles ──────────────────────────────────────────────────────
@@ -146,17 +148,19 @@ function buildQuadsScene(
     owGeo.setAttribute('position', new THREE.Float32BufferAttribute(oWire, 3));
     add(new THREE.LineSegments(owGeo, new THREE.LineBasicMaterial(
       wire
-        ? { color: 0xff7700 }
-        : { color: 0xffaa55, transparent: true, opacity: 0.70 },
+        ? { color: 0xff7700, linewidth: 2 }
+        : { color: 0xffaa55, transparent: true, opacity: 0.85, linewidth: 1 },
     )));
 
-    if (wire) {
-      const ovPos: number[] = [];
-      for (const o of orphans) for (const v of o.v) ovPos.push(...v);
-      const ovGeo = new THREE.BufferGeometry();
-      ovGeo.setAttribute('position', new THREE.Float32BufferAttribute(ovPos, 3));
-      add(new THREE.Points(ovGeo, new THREE.PointsMaterial({ color: 0xff9955, size: 3, sizeAttenuation: false })));
-    }
+    const ovPos: number[] = [];
+    for (const o of orphans) for (const v of o.v) ovPos.push(...v);
+    const ovGeo = new THREE.BufferGeometry();
+    ovGeo.setAttribute('position', new THREE.Float32BufferAttribute(ovPos, 3));
+    add(new THREE.Points(ovGeo, new THREE.PointsMaterial({
+      color: wire ? 0xff9955 : 0xffaa55,
+      size: wire ? 4 : 2.5,
+      sizeAttenuation: false
+    })));
   }
 }
 

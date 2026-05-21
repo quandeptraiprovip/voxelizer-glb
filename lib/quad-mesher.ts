@@ -60,12 +60,23 @@ export function buildQuadMesh(
     center: V3;
   }
 
+  // Calculate bounding box to determine adaptive weld tolerance
+  let minX=Infinity, minY=Infinity, minZ=Infinity, maxX=-Infinity, maxY=-Infinity, maxZ=-Infinity;
+  for (let i = 0; i < posAttr.count; i++) {
+    const x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+  }
+  const bbox = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+  const WELD_TOLERANCE = bbox * 0.0001; // 0.01% of bounding box
+  const WELD_SCALE = 1 / WELD_TOLERANCE;
+
   // Weld vertices: deduplicate by rounded position so we can detect shared edges
   // in non-indexed or badly-indexed geometries
-  const WELD = 1e5;
   const weldMap = new Map<string, number>();
   const weld = (i: number): number => {
-    const key = `${Math.round(posAttr.getX(i) * WELD)},${Math.round(posAttr.getY(i) * WELD)},${Math.round(posAttr.getZ(i) * WELD)}`;
+    const key = `${Math.round(posAttr.getX(i) * WELD_SCALE)},${Math.round(posAttr.getY(i) * WELD_SCALE)},${Math.round(posAttr.getZ(i) * WELD_SCALE)}`;
     let wi = weldMap.get(key);
     if (wi === undefined) { wi = weldMap.size; weldMap.set(key, wi); }
     return wi;
@@ -111,7 +122,7 @@ export function buildQuadMesh(
     addEdge(w0, w1, i); addEdge(w1, w2, i); addEdge(w2, w0, i);
   }
 
-  // ── QEM-based tri→quad pairing ────────────────────────────────────────────
+  // ── QEM-based tri→quad pairing with multi-pass ────────────────────────────
   // Build weld-index → raw-index map for O(1) position access
   const weldToRaw = new Map<number, number>();
   for (let i = 0; i < triCount; i++)
@@ -140,61 +151,74 @@ export function buildQuadMesh(
     }
   }
 
-  // Collect every adjacent triangle pair, score each by QEM error at centroid
+  // Multi-pass coplanarity thresholds: 20°, 40°, 60°, then any (no threshold)
+  const PASSES = [
+    { threshold: Math.cos(20 * Math.PI/180), name: '20°' },  // 0.9397
+    { threshold: Math.cos(40 * Math.PI/180), name: '40°' },  // 0.7660
+    { threshold: Math.cos(60 * Math.PI/180), name: '60°' },  // 0.5
+    { threshold: -2, name: 'any' },  // Accept all adjacent pairs
+  ];
+
   interface Pair { t1: number; t2: number; wA: number; wB: number; cost: number }
-  const candidates: Pair[] = [];
-
-  for (let i = 0; i < triCount; i++) {
-    const t1 = tris[i];
-    const [w0, w1, w2] = t1.vi;
-    for (const [ea, eb] of [[w0,w1],[w1,w2],[w2,w0]] as [number,number][]) {
-      const key = ea < eb ? `${ea},${eb}` : `${eb},${ea}`;
-      const nbrs = edgeMap.get(key);
-      if (!nbrs) continue;
-      for (const j of nbrs) {
-        if (j <= i) continue; // each pair once
-        const t2 = tris[j];
-        // Never merge triangles facing opposite directions
-        const dot12 = t1.normal[0]*t2.normal[0]+t1.normal[1]*t2.normal[1]+t1.normal[2]*t2.normal[2];
-        if (dot12 < 0) continue;
-
-        const wA = ea < eb ? ea : eb, wB = ea < eb ? eb : ea;
-        const u1wi = t1.vi.find(w => w !== wA && w !== wB)!;
-        const u2wi = t2.vi.find(w => w !== wA && w !== wB)!;
-        if (u1wi === undefined || u2wi === undefined) continue;
-
-        // Q₄ = sum of quadrics for the 4 quad vertices
-        const Q4 = new Float64Array(16);
-        for (const wi of [u1wi, wA, wB, u2wi]) {
-          const q = vertQ.get(wi); if (!q) continue;
-          for (let k = 0; k < 16; k++) Q4[k] += q[k];
-        }
-
-        // QEM error at quad centroid — measures planarity of the resulting quad
-        const [u1p, sAp, sBp, u2p] = [posW(u1wi), posW(wA), posW(wB), posW(u2wi)];
-        const cx = (u1p[0]+sAp[0]+u2p[0]+sBp[0])*0.25;
-        const cy = (u1p[1]+sAp[1]+u2p[1]+sBp[1])*0.25;
-        const cz = (u1p[2]+sAp[2]+u2p[2]+sBp[2])*0.25;
-        const v  = [cx, cy, cz, 1];
-        let cost = 0;
-        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) cost += Q4[r*4+c]*v[r]*v[c];
-
-        candidates.push({ t1: i, t2: j, wA, wB, cost });
-      }
-    }
-  }
-
-  // Sort ascending by QEM cost — flattest (best) quads first
-  candidates.sort((a, b) => a.cost - b.cost);
-
-  // Greedy matching: pick best non-overlapping pairs
   const pairedSet = new Set<number>();
   const pairs: Pair[] = [];
-  for (const cand of candidates) {
-    if (!pairedSet.has(cand.t1) && !pairedSet.has(cand.t2)) {
-      pairs.push(cand);
-      pairedSet.add(cand.t1);
-      pairedSet.add(cand.t2);
+
+  // For each pass with decreasing coplanarity requirement
+  for (const pass of PASSES) {
+    const candidates: Pair[] = [];
+
+    for (let i = 0; i < triCount; i++) {
+      if (pairedSet.has(i)) continue; // Already paired
+      const t1 = tris[i];
+      const [w0, w1, w2] = t1.vi;
+
+      for (const [ea, eb] of [[w0,w1],[w1,w2],[w2,w0]] as [number,number][]) {
+        const key = ea < eb ? `${ea},${eb}` : `${eb},${ea}`;
+        const nbrs = edgeMap.get(key);
+        if (!nbrs) continue;
+
+        for (const j of nbrs) {
+          if (j <= i || pairedSet.has(j)) continue;
+          const t2 = tris[j];
+
+          // Check coplanarity with current pass threshold
+          const dot12 = t1.normal[0]*t2.normal[0]+t1.normal[1]*t2.normal[1]+t1.normal[2]*t2.normal[2];
+          if (dot12 < pass.threshold) continue;
+
+          const wA = ea < eb ? ea : eb, wB = ea < eb ? eb : ea;
+          const u1wi = t1.vi.find(w => w !== wA && w !== wB)!;
+          const u2wi = t2.vi.find(w => w !== wA && w !== wB)!;
+          if (u1wi === undefined || u2wi === undefined) continue;
+
+          // Q₄ = sum of quadrics for the 4 quad vertices
+          const Q4 = new Float64Array(16);
+          for (const wi of [u1wi, wA, wB, u2wi]) {
+            const q = vertQ.get(wi); if (!q) continue;
+            for (let k = 0; k < 16; k++) Q4[k] += q[k];
+          }
+
+          // QEM error at quad centroid
+          const [u1p, sAp, sBp, u2p] = [posW(u1wi), posW(wA), posW(wB), posW(u2wi)];
+          const cx = (u1p[0]+sAp[0]+u2p[0]+sBp[0])*0.25;
+          const cy = (u1p[1]+sAp[1]+u2p[1]+sBp[1])*0.25;
+          const cz = (u1p[2]+sAp[2]+u2p[2]+sBp[2])*0.25;
+          const v  = [cx, cy, cz, 1];
+          let cost = 0;
+          for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) cost += Q4[r*4+c]*v[r]*v[c];
+
+          candidates.push({ t1: i, t2: j, wA, wB, cost });
+        }
+      }
+    }
+
+    // Sort by QEM cost and greedily match
+    candidates.sort((a, b) => a.cost - b.cost);
+    for (const cand of candidates) {
+      if (!pairedSet.has(cand.t1) && !pairedSet.has(cand.t2)) {
+        pairs.push(cand);
+        pairedSet.add(cand.t1);
+        pairedSet.add(cand.t2);
+      }
     }
   }
 

@@ -1,12 +1,10 @@
-import { clampVoxelGrid, type TriangleGrid } from './triangle-grid';
+import { clampVoxelGrid } from './triangle-grid';
 import {
   inscribedCubeHalfEdge,
   orientationForSurface,
   quaternionToEuler,
   triangleCurvature,
 } from './voxel-orientation';
-
-const EPSILON = 1e-8;
 
 interface GeometryData {
   positions: Float32Array;
@@ -23,7 +21,6 @@ interface VoxelizeParams {
   surface: boolean;
   interior: boolean;
   curvedVoxels: boolean;
-  method?: 'proximity' | 'triangle-aabb' | 'conservative' | 'sdf';
 }
 
 interface Voxel {
@@ -149,62 +146,6 @@ function positionGradientColor(
   ];
 }
 
-// Möller–Trumbore - returns hit coordinate along ray axis, or -Infinity on miss
-function rayHitX(oy: number, oz: number,
-  ax: number, ay: number, az: number,
-  bx: number, by: number, bz: number,
-  cx: number, cy: number, cz: number
-): number {
-  const e1x=bx-ax, e1y=by-ay, e1z=bz-az;
-  const e2x=cx-ax, e2y=cy-ay, e2z=cz-az;
-  const det = e1z*e2y - e1y*e2z;
-  if (Math.abs(det) < EPSILON) return -Infinity;
-  const f = 1/det;
-  const sy = oy-ay, sz = oz-az;
-  const u = f*(sz*e2y - sy*e2z);
-  if (u < -EPSILON || u > 1+EPSILON) return -Infinity;
-  const v = f*(sy*e1z - sz*e1y);
-  if (v < -EPSILON || u+v > 1+EPSILON) return -Infinity;
-  // Hit X via barycentric interpolation — independent of ray origin x
-  return ax + u*(bx-ax) + v*(cx-ax);
-}
-
-function rayHitY(ox: number, oz: number,
-  ax: number, ay: number, az: number,
-  bx: number, by: number, bz: number,
-  cx: number, cy: number, cz: number
-): number {
-  const e1x=bx-ax, e1y=by-ay, e1z=bz-az;
-  const e2x=cx-ax, e2y=cy-ay, e2z=cz-az;
-  const det = e1x*e2z - e1z*e2x;
-  if (Math.abs(det) < EPSILON) return -Infinity;
-  const f = 1/det;
-  const sz = oz-az, sx = ox-ax;
-  const u = f*(sx*e2z - sz*e2x);
-  if (u < -EPSILON || u > 1+EPSILON) return -Infinity;
-  const v = f*(sz*e1x - sx*e1z);
-  if (v < -EPSILON || u+v > 1+EPSILON) return -Infinity;
-  return ay + u*(by-ay) + v*(cy-ay);
-}
-
-function rayHitZ(ox: number, oy: number,
-  ax: number, ay: number, az: number,
-  bx: number, by: number, bz: number,
-  cx: number, cy: number, cz: number
-): number {
-  const e1x=bx-ax, e1y=by-ay, e1z=bz-az;
-  const e2x=cx-ax, e2y=cy-ay, e2z=cz-az;
-  const det = e1y*e2x - e1x*e2y;
-  if (Math.abs(det) < EPSILON) return -Infinity;
-  const f = 1/det;
-  const sx = ox-ax, sy = oy-ay;
-  const u = f*(sy*e2x - sx*e2y);
-  if (u < -EPSILON || u > 1+EPSILON) return -Infinity;
-  const v = f*(sx*e1y - sy*e1x);
-  if (v < -EPSILON || u+v > 1+EPSILON) return -Infinity;
-  return az + u*(bz-az) + v*(cz-az);
-}
-
 // ─── FLOOD-FILL INTERIOR DETECTION (Topology-based, works with non-watertight meshes) ──
 
 /**
@@ -297,195 +238,6 @@ function buildFloodFillInside(
   return insideGrid;
 }
 
-// ─── DEPRECATED: SCAN-LINE INTERIOR FILL (Kept for reference, replaced by flood-fill) ──────────────
-
-/**
- * [DEPRECATED] Build a complete inside/outside classification grid using scan-line filling.
- * For each axis direction, iterate all triangles and collect ray intersections.
- * Uses parity rule: odd number of intersections = inside.
- * Returns majority vote across 3 axes (≥2 = inside).
- *
- * NOTE: Replaced by buildFloodFillInside() for better non-watertight mesh support.
- */
-function buildScanLineInside(
-  triPos: Float32Array,
-  triCount: number,
-  triGrid: TriangleGrid,
-  bbox: { min: [number, number, number]; max: [number, number, number] },
-  gridX: number,
-  gridY: number,
-  gridZ: number,
-  voxelSize: number,
-  PERTURB: number,
-  gridOffset: [number, number, number],
-): Uint8Array {
-  const cellCount = gridX * gridY * gridZ;
-  const insideX = new Uint8Array(cellCount);
-  const insideY = new Uint8Array(cellCount);
-  const insideZ = new Uint8Array(cellCount);
-
-  // Helper: cell key into triGrid buckets
-  const cellKey = (ix: number, iy: number, iz: number) =>
-    iz * triGrid.dims[1] * triGrid.dims[0] + iy * triGrid.dims[0] + ix;
-
-  // ── Z-axis scan (columns indexed by gx, gy) ──
-  for (let gy = 0; gy < gridY; gy++) {
-    for (let gx = 0; gx < gridX; gx++) {
-      const px = gridOffset[0] + (gx + 0.5) * voxelSize;
-      const py = gridOffset[1] + (gy + 0.5) * voxelSize;
-
-      // Collect all Z-intersections in this column
-      const hits: number[] = [];
-      const seenTri = new Set<number>();
-
-      for (let gz = 0; gz < gridZ; gz++) {
-        const key = cellKey(gx, gy, gz);
-        const triList = triGrid.buckets.get(key);
-        if (!triList) continue;
-
-        for (const ti of triList) {
-          if (seenTri.has(ti)) continue;
-          seenTri.add(ti);
-
-          const b = ti * 9;
-          const hz = rayHitZ(
-            px, py,
-            triPos[b], triPos[b + 1], triPos[b + 2],
-            triPos[b + 3], triPos[b + 4], triPos[b + 5],
-            triPos[b + 6], triPos[b + 7], triPos[b + 8]
-          );
-
-          if (hz > -Infinity) {
-            hits.push(hz);
-          }
-        }
-      }
-
-      // Sort and apply parity rule
-      hits.sort((a, b) => a - b);
-
-      for (let gz = 0; gz < gridZ; gz++) {
-        const pz = gridOffset[2] + (gz + 0.5) * voxelSize;
-        let count = 0;
-        for (const h of hits) {
-          if (h <= pz) count++;
-          else break;
-        }
-        if (count % 2 === 1) {
-          insideZ[gz * gridY * gridX + gy * gridX + gx] = 1;
-        }
-      }
-    }
-  }
-
-  // ── X-axis scan (columns indexed by gy, gz) ──
-  for (let gz = 0; gz < gridZ; gz++) {
-    for (let gy = 0; gy < gridY; gy++) {
-      const py = gridOffset[1] + (gy + 0.5) * voxelSize;
-      const pz = gridOffset[2] + (gz + 0.5) * voxelSize;
-
-      const hits: number[] = [];
-      const seenTri = new Set<number>();
-
-      for (let gx = 0; gx < gridX; gx++) {
-        const key = cellKey(gx, gy, gz);
-        const triList = triGrid.buckets.get(key);
-        if (!triList) continue;
-
-        for (const ti of triList) {
-          if (seenTri.has(ti)) continue;
-          seenTri.add(ti);
-
-          const b = ti * 9;
-          const hx = rayHitX(
-            py, pz,
-            triPos[b], triPos[b + 1], triPos[b + 2],
-            triPos[b + 3], triPos[b + 4], triPos[b + 5],
-            triPos[b + 6], triPos[b + 7], triPos[b + 8]
-          );
-
-          if (hx > -Infinity) {
-            hits.push(hx);
-          }
-        }
-      }
-
-      hits.sort((a, b) => a - b);
-
-      for (let gx = 0; gx < gridX; gx++) {
-        const px = gridOffset[0] + (gx + 0.5) * voxelSize;
-        let count = 0;
-        for (const h of hits) {
-          if (h <= px) count++;
-          else break;
-        }
-        if (count % 2 === 1) {
-          insideX[gz * gridY * gridX + gy * gridX + gx] = 1;
-        }
-      }
-    }
-  }
-
-  // ── Y-axis scan (columns indexed by gx, gz) ──
-  for (let gz = 0; gz < gridZ; gz++) {
-    for (let gx = 0; gx < gridX; gx++) {
-      const px = gridOffset[0] + (gx + 0.5) * voxelSize;
-      const pz = gridOffset[2] + (gz + 0.5) * voxelSize;
-
-      const hits: number[] = [];
-      const seenTri = new Set<number>();
-
-      for (let gy = 0; gy < gridY; gy++) {
-        const key = cellKey(gx, gy, gz);
-        const triList = triGrid.buckets.get(key);
-        if (!triList) continue;
-
-        for (const ti of triList) {
-          if (seenTri.has(ti)) continue;
-          seenTri.add(ti);
-
-          const b = ti * 9;
-          const hy = rayHitY(
-            px, pz,
-            triPos[b], triPos[b + 1], triPos[b + 2],
-            triPos[b + 3], triPos[b + 4], triPos[b + 5],
-            triPos[b + 6], triPos[b + 7], triPos[b + 8]
-          );
-
-          if (hy > -Infinity) {
-            hits.push(hy);
-          }
-        }
-      }
-
-      hits.sort((a, b) => a - b);
-
-      for (let gy = 0; gy < gridY; gy++) {
-        const py = bbox.min[1] + (gy + 0.5) * voxelSize;
-        let count = 0;
-        for (const h of hits) {
-          if (h <= py) count++;
-          else break;
-        }
-        if (count % 2 === 1) {
-          insideY[gz * gridY * gridX + gy * gridX + gx] = 1;
-        }
-      }
-    }
-  }
-
-  // ── Majority vote across 3 axes ──
-  const insideFinal = new Uint8Array(cellCount);
-  for (let idx = 0; idx < cellCount; idx++) {
-    const votes = insideX[idx] + insideY[idx] + insideZ[idx];
-    if (votes >= 2) {
-      insideFinal[idx] = 1;
-    }
-  }
-
-  return insideFinal;
-}
-
 // ─── TRIANGLE–AABB SAT TEST ───────────────────────────────────────────────────
 
 /**
@@ -555,9 +307,7 @@ function voxelize(
   params: VoxelizeParams,
   onProgress?: (progress: number) => void
 ): Voxel[] {
-  const { targetBlocks, blockSizeMul, gapRatio, surface, interior, curvedVoxels, method = 'proximity' } = params;
-  // 0=proximity 1=sdf 2=triangle-aabb 3=conservative
-  const methodCode = method === 'sdf' ? 1 : method === 'triangle-aabb' ? 2 : method === 'conservative' ? 3 : 0;
+  const { targetBlocks, blockSizeMul, gapRatio, surface, interior, curvedVoxels } = params;
 
   const sizeX = bbox.max[0] - bbox.min[0];
   const sizeY = bbox.max[1] - bbox.min[1];
@@ -614,6 +364,11 @@ function voxelize(
   const cellCurvature = new Float32Array(cellCount);
   const cellBestDistSq = new Float32Array(cellCount);
   cellBestDistSq.fill(1e30);
+  // Dominant-normal tracking for crease detection (largest-area triangle per voxel)
+  const dominantNx = new Float32Array(cellCount);
+  const dominantNy = new Float32Array(cellCount);
+  const dominantNz = new Float32Array(cellCount);
+  const dominantArea = new Float32Array(cellCount);
 
   // Note: triGrid is no longer used (raycasting replaced with flood-fill)
   // const triGrid = buildTriangleGrid(triPos, triCount, bbox.min, bbox.max, voxelSize);
@@ -622,14 +377,8 @@ function voxelize(
     onProgress?.(Math.max(0, Math.min(100, p)));
   };
 
-  // ── STEP 1: Surface voxelization ─────────────────────────────────────────
-  const surfaceBand = interior ? 1.0 : 0.65;
-  // SDF: exact half-cell radius (tightest); proximity: band-scaled radius
-  const proximityBand = methodCode === 1 ? 0.5 : surfaceBand;
-  const THRESH_SQ = (voxelSize * proximityBand) ** 2;
+  // ── STEP 1: Surface voxelization (Triangle-AABB / SAT) ──────────────────
   const halfCell = voxelSize * 0.5;
-  // Conservative expands the AABB by 15% to guarantee no gaps
-  const aabbHalf = methodCode === 3 ? halfCell * 1.15 : halfCell;
 
   if (surface) {
     for (let ti = 0; ti < triCount; ti++) {
@@ -652,20 +401,23 @@ function voxelize(
       const i1 = indices[ti * 3 + 1];
       const i2 = indices[ti * 3 + 2];
       let triCurv = 0;
-      if (normals.length >= (Math.max(i0, i1, i2) + 1) * 3) {
+      const hasVtxNormals = normals.length >= (Math.max(i0, i1, i2) + 1) * 3;
+      if (hasVtxNormals) {
         triCurv = triangleCurvature(
           normals[i0 * 3], normals[i0 * 3 + 1], normals[i0 * 3 + 2],
           normals[i1 * 3], normals[i1 * 3 + 1], normals[i1 * 3 + 2],
           normals[i2 * 3], normals[i2 * 3 + 1], normals[i2 * 3 + 2]
         );
       }
+      // Triangle area = fnl * 0.5; used as weight so large triangles dominate
+      const triArea = fnl;
 
-      const gx0 = Math.max(0, Math.floor((Math.min(ax,bx,cx)-bbox.min[0])/voxelSize)-1);
-      const gx1 = Math.min(gridX-1, Math.ceil((Math.max(ax,bx,cx)-bbox.min[0])/voxelSize)+1);
-      const gy0 = Math.max(0, Math.floor((Math.min(ay,by,cy)-bbox.min[1])/voxelSize)-1);
-      const gy1 = Math.min(gridY-1, Math.ceil((Math.max(ay,by,cy)-bbox.min[1])/voxelSize)+1);
-      const gz0 = Math.max(0, Math.floor((Math.min(az,bz,cz)-bbox.min[2])/voxelSize)-1);
-      const gz1 = Math.min(gridZ-1, Math.ceil((Math.max(az,bz,cz)-bbox.min[2])/voxelSize)+1);
+      const gx0 = Math.max(0, Math.floor((Math.min(ax,bx,cx)-gridOffset[0])/voxelSize)-1);
+      const gx1 = Math.min(gridX-1, Math.ceil((Math.max(ax,bx,cx)-gridOffset[0])/voxelSize)+1);
+      const gy0 = Math.max(0, Math.floor((Math.min(ay,by,cy)-gridOffset[1])/voxelSize)-1);
+      const gy1 = Math.min(gridY-1, Math.ceil((Math.max(ay,by,cy)-gridOffset[1])/voxelSize)+1);
+      const gz0 = Math.max(0, Math.floor((Math.min(az,bz,cz)-gridOffset[2])/voxelSize)-1);
+      const gz1 = Math.min(gridZ-1, Math.ceil((Math.max(az,bz,cz)-gridOffset[2])/voxelSize)+1);
 
       for (let gz=gz0; gz<=gz1; gz++) {
         for (let gy=gy0; gy<=gy1; gy++) {
@@ -674,24 +426,41 @@ function voxelize(
             const pcy = bboxCenter[1] + (gy - gridY*0.5 + 0.5)*voxelSize;
             const pcz = bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*voxelSize;
 
-            // Method dispatch: AABB/conservative use SAT first, then closest-point for color
-            let hit: { distSq: number; barB: number; barC: number };
-            if (methodCode >= 2) {
-              if (!triangleAABBIntersect(ax,ay,az,bx,by,bz,cx,cy,cz, pcx,pcy,pcz, aabbHalf,aabbHalf,aabbHalf)) continue;
-              hit = triangleClosestBarycentric(pcx, pcy, pcz, ax, ay, az, bx, by, bz, cx, cy, cz);
-            } else {
-              hit = triangleClosestBarycentric(pcx, pcy, pcz, ax, ay, az, bx, by, bz, cx, cy, cz);
-              if (hit.distSq > THRESH_SQ) continue;
-            }
+            // Triangle-AABB: SAT intersection test, then closest-point for normals/colors
+            if (!triangleAABBIntersect(ax,ay,az,bx,by,bz,cx,cy,cz, pcx,pcy,pcz, halfCell,halfCell,halfCell)) continue;
+            const hit = triangleClosestBarycentric(pcx, pcy, pcz, ax, ay, az, bx, by, bz, cx, cy, cz);
 
             const idx = gz*gridY*gridX + gy*gridX + gx;
             grid[idx] = 1;
             const o = idx * 3;
-            const nw = 1 / (hit.distSq + (voxelSize * 0.07) * (voxelSize * 0.07));
-            normalSum[o] += fnx * nw;
-            normalSum[o + 1] += fny * nw;
-            normalSum[o + 2] += fnz * nw;
-            normalWsum[idx] += nw;
+
+            // Interpolate vertex normals at barycentric hit coords (smoother than face normals)
+            const wa = 1 - hit.barB - hit.barC;
+            let snx: number, sny: number, snz: number;
+            if (hasVtxNormals) {
+              snx = wa*normals[i0*3]   + hit.barB*normals[i1*3]   + hit.barC*normals[i2*3];
+              sny = wa*normals[i0*3+1] + hit.barB*normals[i1*3+1] + hit.barC*normals[i2*3+1];
+              snz = wa*normals[i0*3+2] + hit.barB*normals[i1*3+2] + hit.barC*normals[i2*3+2];
+              const snl = Math.hypot(snx, sny, snz) || 1;
+              snx /= snl; sny /= snl; snz /= snl;
+            } else {
+              snx = fnx; sny = fny; snz = fnz;
+            }
+
+            // Area-weighted accumulation: large triangles contribute proportionally more
+            normalSum[o]   += snx * triArea;
+            normalSum[o+1] += sny * triArea;
+            normalSum[o+2] += snz * triArea;
+            normalWsum[idx] += triArea;
+
+            // Track dominant triangle (largest area) for crease detection
+            if (triArea > dominantArea[idx]) {
+              dominantArea[idx] = triArea;
+              dominantNx[idx] = snx;
+              dominantNy[idx] = sny;
+              dominantNz[idx] = snz;
+            }
+
             if (triCurv > cellCurvature[idx]) cellCurvature[idx] = triCurv;
             if (hit.distSq < cellBestDistSq[idx]) {
               cellBestDistSq[idx] = hit.distSq;
@@ -888,7 +657,7 @@ function voxelize(
   const canonicalNorm = new Float32Array(cellCount * 3); // Store canonical normal sum for flat regions
 
   if (surface && curvedVoxels) {
-    // First pass: normalize raw normals
+    // First pass: normalize raw normals + crease detection
     for (let idx = 0; idx < cellCount; idx++) {
       if (grid[idx] !== 1 || normalWsum[idx] <= 0) continue;
       const o = idx * 3;
@@ -897,14 +666,24 @@ function voxelize(
       let ny = normalSum[o + 1] / ws;
       let nz = normalSum[o + 2] / ws;
       const nl = Math.hypot(nx, ny, nz) || 1;
-      orientNx[idx] = nx / nl;
-      orientNy[idx] = ny / nl;
-      orientNz[idx] = nz / nl;
+      nx /= nl; ny /= nl; nz /= nl;
+
+      // Crease detection: if the area-weighted average diverges from the largest-area
+      // triangle's normal by >60°, the voxel straddles a hard edge — use dominant normal
+      // so each side of the crease gets clean, unblended alignment
+      const dot = nx * dominantNx[idx] + ny * dominantNy[idx] + nz * dominantNz[idx];
+      if (dot < 0.5) {
+        nx = dominantNx[idx]; ny = dominantNy[idx]; nz = dominantNz[idx];
+      }
+
+      orientNx[idx] = nx;
+      orientNy[idx] = ny;
+      orientNz[idx] = nz;
       hasOrient[idx] = 1;
-      // Store unnormalized sum for later canonicalization
-      canonicalNorm[idx * 3] = normalSum[o];
-      canonicalNorm[idx * 3 + 1] = normalSum[o + 1];
-      canonicalNorm[idx * 3 + 2] = normalSum[o + 2];
+      // Store crease-corrected unit normal for flat-region BFS
+      canonicalNorm[idx * 3]     = nx;
+      canonicalNorm[idx * 3 + 1] = ny;
+      canonicalNorm[idx * 3 + 2] = nz;
     }
 
     // Second pass: Detect and canonicalize flat surface regions

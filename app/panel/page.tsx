@@ -53,8 +53,24 @@ export default function PanelPage() {
     try {
       const parsed = await parseModelFile(f);
       setSrcGeo(parsed.geometry);
+
+      // Auto-select maxTris based on triangle count
+      const indexAttr = parsed.geometry.index;
+      const posAttr = parsed.geometry.attributes.position;
+      const totalTris = indexAttr
+        ? Math.floor(indexAttr.count / 3)
+        : Math.floor(posAttr.count / 3);
+
+      // Strategy: aim for 10000-14000 triangles (good detail-to-performance balance)
+      // but if model is smaller, use most of its triangles
+      let suggested = Math.min(14000, Math.max(4000, totalTris));
+      if (totalTris > 20000) suggested = 12000;
+      else if (totalTris > 10000) suggested = Math.min(10000, totalTris);
+      else if (totalTris > 3000) suggested = totalTris;
+
+      setMaxTris(suggested);
       setStep('triangles');
-      setStatus('Model ready — press Generate');
+      setStatus(`Model ready (${totalTris.toLocaleString()} tris, maxTris auto-set to ${suggested.toLocaleString()})`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse model');
       setStatus('');
@@ -186,6 +202,52 @@ export default function PanelPage() {
                     </span>
                   </div>
                   <div className={pstyles.statRow}><span className={pstyles.statLabel}>Passes</span><span className={pstyles.statVal}>3 (20°/40°/60°)</span></div>
+
+                  <div className={pstyles.algorithmSection}>
+                    <div className={pstyles.algorithmTitle}>QEM Triangle-to-Quad Algorithm</div>
+                    <div className={pstyles.algorithmStep}>
+                      <div className={pstyles.stepNum}>①</div>
+                      <div>
+                        <div className={pstyles.stepName}>Vertex Welding</div>
+                        <div className={pstyles.stepDesc} style={{marginTop:'3px'}}>Deduplicate vertices by rounding positions (WELD=1e5) to detect shared edges in non-indexed geometries</div>
+                      </div>
+                    </div>
+                    <div className={pstyles.algorithmStep}>
+                      <div className={pstyles.stepNum}>②</div>
+                      <div>
+                        <div className={pstyles.stepName}>Edge Adjacency Map</div>
+                        <div className={pstyles.stepDesc} style={{marginTop:'3px'}}>Build map from each edge (by welded indices) to adjacent triangle pairs</div>
+                      </div>
+                    </div>
+                    <div className={pstyles.algorithmStep}>
+                      <div className={pstyles.stepNum}>③</div>
+                      <div>
+                        <div className={pstyles.stepName}>Compute QEM Matrices</div>
+                        <div className={pstyles.stepDesc} style={{marginTop:'3px'}}>For each vertex, accumulate 4×4 quadric matrices Q_v = Σ(p·pᵀ) from adjacent face planes</div>
+                      </div>
+                    </div>
+                    <div className={pstyles.algorithmStep}>
+                      <div className={pstyles.stepNum}>④</div>
+                      <div>
+                        <div className={pstyles.stepName}>Score Candidates</div>
+                        <div className={pstyles.stepDesc} style={{marginTop:'3px'}}>For each adjacent tri pair: compute QEM error at quad centroid to measure planarity (lower = flatter)</div>
+                      </div>
+                    </div>
+                    <div className={pstyles.algorithmStep}>
+                      <div className={pstyles.stepNum}>⑤</div>
+                      <div>
+                        <div className={pstyles.stepName}>Greedy Matching</div>
+                        <div className={pstyles.stepDesc} style={{marginTop:'3px'}}>Sort by cost (flattest first), then greedily pick non-overlapping pairs</div>
+                      </div>
+                    </div>
+                    <div className={pstyles.algorithmStep}>
+                      <div className={pstyles.stepNum}>⑥</div>
+                      <div>
+                        <div className={pstyles.stepName}>Vertex Ordering</div>
+                        <div className={pstyles.stepDesc} style={{marginTop:'3px'}}>Sort 4 quad vertices CCW by angle around centroid to avoid hourglass/bowtie shapes</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
