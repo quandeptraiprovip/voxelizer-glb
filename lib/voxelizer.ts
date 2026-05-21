@@ -17,6 +17,8 @@ export interface Voxel {
 export interface ParsedModel {
   geometry: THREE.BufferGeometry;
   surfaceColor: string;
+  meshCount?: number;
+  vertexCount?: number;
 }
 
 const EPSILON = 1e-8;
@@ -85,9 +87,13 @@ export async function parseModelFile(file: File): Promise<ParsedModel> {
   if (ext.endsWith('.glb') || ext.endsWith('.gltf')) {
     result = await parseGLB(uint8);
   } else if (ext.endsWith('.obj')) {
-    result = { geometry: parseOBJ(new TextDecoder().decode(uint8)), surfaceColor: '#cccccc' };
+    const geometry = parseOBJ(new TextDecoder().decode(uint8));
+    const vertexCount = geometry.getAttribute('position')?.count || 0;
+    result = { geometry, surfaceColor: '#cccccc', meshCount: 1, vertexCount };
   } else if (ext.endsWith('.stl')) {
-    result = { geometry: parseSTL(uint8), surfaceColor: '#cccccc' };
+    const geometry = parseSTL(uint8);
+    const vertexCount = geometry.getAttribute('position')?.count || 0;
+    result = { geometry, surfaceColor: '#cccccc', meshCount: 1, vertexCount };
   } else if (ext.endsWith('.fbx')) {
     result = await parseFBX(arrayBuffer);
   } else {
@@ -106,6 +112,7 @@ async function parseFBX(data: ArrayBuffer): Promise<ParsedModel> {
   const allColors: number[] = [];
   const allIndices: number[] = [];
   let vertexOffset = 0;
+  let meshCount = 0;
   const v = new THREE.Vector3();
 
   group.traverse((child) => {
@@ -113,6 +120,7 @@ async function parseFBX(data: ArrayBuffer): Promise<ParsedModel> {
     const geo = child.geometry as THREE.BufferGeometry;
     const posAttr = geo.getAttribute('position');
     if (!posAttr || posAttr.count === 0) return;
+    meshCount++;
 
     child.updateWorldMatrix(true, false);
     const m = child.matrixWorld;
@@ -168,7 +176,12 @@ async function parseFBX(data: ArrayBuffer): Promise<ParsedModel> {
   merged.setIndex(allIndices);
   merged.computeVertexNormals();
 
-  return { geometry: merged, surfaceColor: '#cccccc' };
+  return {
+    geometry: merged,
+    surfaceColor: '#cccccc',
+    meshCount,
+    vertexCount: allPositions.length / 3
+  };
 }
 
 async function parseGLB(data: Uint8Array): Promise<ParsedModel> {
@@ -214,7 +227,16 @@ async function parseGLB(data: Uint8Array): Promise<ParsedModel> {
 
   if (!geometry) throw new Error('No mesh found in GLB');
   if (!geometry.getAttribute('normal')) geometry.computeVertexNormals();
-  return { geometry, surfaceColor };
+
+  const meshCount = json?.meshes?.length || 1;
+  const vertexCount = geometry.getAttribute('position')?.count || 0;
+
+  return {
+    geometry,
+    surfaceColor,
+    meshCount,
+    vertexCount
+  };
 }
 
 // Load and decode image data from GLB binary

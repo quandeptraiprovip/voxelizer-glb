@@ -163,6 +163,7 @@ export default function Home() {
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedGeometry, setParsedGeometry] = useState<any>(null);
+  const [meshInfo, setMeshInfo] = useState<{ meshCount?: number; vertexCount?: number }>({});
   const [voxels, setVoxels] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [parseLoading, setParseLoading] = useState(false);
@@ -199,6 +200,7 @@ export default function Home() {
     setVoxels([]);
     setShowVoxels(false);
     setParsedGeometry(null);
+    setMeshInfo({});
     setParseLoading(true);
     setGenerateDone(false);
     setStatus('Parsing model…');
@@ -210,6 +212,12 @@ export default function Home() {
       const vertexCount = posAttr ? posAttr.count : 0;
       const heavy = vertexCount > 100000;
       setIsHeavyModel(heavy);
+
+      // Store mesh information
+      setMeshInfo({
+        meshCount: parsed.meshCount,
+        vertexCount: parsed.vertexCount
+      });
 
       setParsedGeometry(parsed.geometry);
       setStatus(heavy ? '⚠️ Heavy model - auto-update disabled' : '');
@@ -526,7 +534,17 @@ export default function Home() {
                 className={styles.fileInput}
               />
             </div>
-            {file && <div className={styles.fileName} title={file.name}>{file.name}</div>}
+            {file && (
+              <>
+                <div className={styles.fileName} title={file.name}>{file.name}</div>
+                {meshInfo.meshCount !== undefined && (
+                  <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)', marginTop: '8px', display: 'flex', gap: '16px' }}>
+                    <span>📦 Meshes: {meshInfo.meshCount}</span>
+                    <span>🔷 Vertices: {meshInfo.vertexCount?.toLocaleString()}</span>
+                  </div>
+                )}
+              </>
+            )}
             {parseLoading && (
               <div className={styles.cardStatus}>
                 <span className={styles.spinnerDots}><i /><i /><i /></span>

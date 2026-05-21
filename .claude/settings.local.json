@@ -37,7 +37,8 @@
       "Bash(pkill -f \"npm run dev\")",
       "Bash(tee /tmp/voxelizer-dev.log)",
       "Read(//tmp/**)",
-      "Bash(chromium-cli screenshot *)"
+      "Bash(chromium-cli screenshot *)",
+      "Bash(chromium-cli --no-headless http://localhost:3000 --screenshot=/tmp/voxelizer-initial.png --timeout=5000)"
     ]
   }
 }
