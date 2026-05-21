@@ -1400,7 +1400,7 @@ export function voxelizeGeometry(
   const surfaceVoxels = new Set<number>();
   const voxelColors = new Map<number, [number,number,number]>();
   // Increased threshold to catch more surface details
-  const SURFACE_THRESHOLD_SQ = ((baseVoxelSize * 1.5) ** 2);  // More generous threshold
+  const SURFACE_THRESHOLD_SQ = ((baseVoxelSize * 2.0) ** 2);  // Very generous threshold
 
   for (let ti = 0; ti < triCount; ti++) {
     const b = ti * 9;
@@ -1473,7 +1473,7 @@ export function voxelizeGeometry(
           const voteY = countRayIntersections(cx, cy, cz, 'y', triPosData, triCount, bbox, baseVoxelSize);
           const voteZ = countRayIntersections(cx, cy, cz, 'z', triPosData, triCount, bbox, baseVoxelSize);
 
-          // Relaxed voting: at least 1/3 rays says "inside" (previously 2/3)
+          // Very relaxed: just 1 ray saying "inside" is enough
           const insideCount = [voteX, voteY, voteZ].filter(v => v).length;
           if (insideCount >= 1) {
             grid[idx] = 2;

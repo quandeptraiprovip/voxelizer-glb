@@ -376,7 +376,7 @@ function voxelize(
   };
 
   // ── STEP 1: Surface voxelization (Triangle-AABB / SAT) ──────────────────
-  const halfCell = voxelSize * 0.5;
+  const halfCell = voxelSize * 1.0;  // Doubled from 0.5 to catch more surface detail
 
   if (surface) {
     for (let ti = 0; ti < triCount; ti++) {
@@ -555,8 +555,8 @@ function voxelize(
 
   // ── Gap-fill: close small holes with morphological closing ──────────────────
   if (interior) {
-    const FILL_VOTE_THRESHOLD = 3; // out of 6 face-neighbors (relaxed from 5)
-    const MAX_FILL_ITERS = 2;
+    const FILL_VOTE_THRESHOLD = 1; // out of 6 face-neighbors (very aggressive)
+    const MAX_FILL_ITERS = 3;  // More iterations for better fill
 
     for (let iter = 0; iter < MAX_FILL_ITERS; iter++) {
       const toFill: number[] = [];
