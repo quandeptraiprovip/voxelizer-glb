@@ -93,10 +93,10 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
     rendererRef.current = renderer;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.3);
     // Fixed world-space light position (front-left-top)
     directionalLight.position.set(30, 40, 30);
     directionalLight.target.position.set(0, 0, 0); // Point at world origin
@@ -110,6 +110,13 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
     directionalLight.shadow.camera.bottom = -200;
     scene.add(directionalLight);
     scene.add(directionalLight.target);
+
+    // Back/rim light for additional brightness
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    rimLight.position.set(-30, 20, -30);
+    rimLight.target.position.set(0, 0, 0);
+    scene.add(rimLight);
+    scene.add(rimLight.target);
 
     // Simple orbit controls
     const controls = {
@@ -238,11 +245,13 @@ export default function VoxelViewer({ voxels = [], progress = 0, isLoading = fal
     // Create geometry for a unit cube
     const geometry = new THREE.BoxGeometry(1, 1, 1);
 
-    // Create material with vertex colors
+    // Create material with vertex colors - brighter settings
     const material = new THREE.MeshPhongMaterial({
       side: THREE.FrontSide,
       flatShading: true,
-      shininess: 16,
+      shininess: 32,
+      emissive: 0x222222,
+      emissiveIntensity: 0.3,
     });
 
     // Create instanced mesh

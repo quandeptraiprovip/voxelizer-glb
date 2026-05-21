@@ -30,7 +30,14 @@
       "Bash(npx --yes playwright install chromium)",
       "Bash(npm install *)",
       "Bash(npm uninstall *)",
-      "Bash(echo \"PID: $!\")"
+      "Bash(echo \"PID: $!\")",
+      "Bash(rtk find *)",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"npm run dev\")",
+      "Bash(tee /tmp/voxelizer-dev.log)",
+      "Read(//tmp/**)",
+      "Bash(chromium-cli screenshot *)"
     ]
   }
 }

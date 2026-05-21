@@ -1,6 +1,5 @@
 import { clampVoxelGrid } from './triangle-grid';
 import {
-  inscribedCubeHalfEdge,
   orientationForSurface,
   quaternionToEuler,
   triangleCurvature,
@@ -19,6 +18,7 @@ interface VoxelizeParams {
   surface: boolean;
   interior: boolean;
   curvedVoxels: boolean;
+  gapSizeRatio: number;
 }
 
 interface Voxel {
@@ -305,7 +305,7 @@ function voxelize(
   params: VoxelizeParams,
   onProgress?: (progress: number) => void
 ): Voxel[] {
-  const { targetBlocks, surface, interior, curvedVoxels } = params;
+  const { targetBlocks, surface, interior, curvedVoxels, gapSizeRatio } = params;
 
   const sizeX = bbox.max[0] - bbox.min[0];
   const sizeY = bbox.max[1] - bbox.min[1];
@@ -376,7 +376,7 @@ function voxelize(
   };
 
   // ── STEP 1: Surface voxelization (Triangle-AABB / SAT) ──────────────────
-  const halfCell = voxelSize * 1.0;  // Doubled from 0.5 to catch more surface detail
+  const halfCell = voxelSize * 0.5;  // Doubled from 0.5 to catch more surface detail
 
   if (surface) {
     for (let ti = 0; ti < triCount; ti++) {
@@ -555,8 +555,8 @@ function voxelize(
 
   // ── Gap-fill: close small holes with morphological closing ──────────────────
   if (interior) {
-    const FILL_VOTE_THRESHOLD = 1; // out of 6 face-neighbors (very aggressive)
-    const MAX_FILL_ITERS = 3;  // More iterations for better fill
+    const FILL_VOTE_THRESHOLD = 3; // out of 6 face-neighbors (very aggressive)
+    const MAX_FILL_ITERS = 2;  // More iterations for better fill
 
     for (let iter = 0; iter < MAX_FILL_ITERS; iter++) {
       const toFill: number[] = [];
@@ -766,7 +766,7 @@ function voxelize(
   // ── STEP 3: Build output (one voxel per grid cell — no overlap) ───────────
   reportProgress(85);
   const voxels: Voxel[] = [];
-  const cellHalf = (voxelSize * 0.98) * 0.5;
+  const cellHalf = (voxelSize * gapSizeRatio) * 0.5;
 
   for (let gz=0; gz<gridZ; gz++) {
     for (let gy=0; gy<gridY; gy++) {
@@ -823,8 +823,9 @@ function voxelize(
 
         // Inscribed cube fills the cell AABB exactly when rotated;
         // ×1.06 gives slight visual tightness without neighbour overlap.
-        const half = inscribedCubeHalfEdge(cellHalf, quaternion) * 1.06;
-        const size = Math.max(half * 2, cellHalf * 0.62);
+        // const half = inscribedCubeHalfEdge(cellHalf, quaternion) * 1.06;
+        // const size = Math.max(half * 2, cellHalf * 0.62);
+        const size = cellHalf * 2; // uniform size for all voxels
 
         voxels.push({
           position: [posX, posY, posZ],

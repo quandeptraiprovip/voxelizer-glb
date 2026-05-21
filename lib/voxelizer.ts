@@ -1317,6 +1317,7 @@ interface VoxelizeOptions {
   interior?: boolean;
   /** Tilt voxels to follow surface normal; size auto-fits cell to avoid overlap */
   curvedVoxels?: boolean;
+  gapSizeRatio?: number;
 }
 
 export function voxelizeGeometry(
@@ -1400,7 +1401,7 @@ export function voxelizeGeometry(
   const surfaceVoxels = new Set<number>();
   const voxelColors = new Map<number, [number,number,number]>();
   // Increased threshold to catch more surface details
-  const SURFACE_THRESHOLD_SQ = ((baseVoxelSize * 2.0) ** 2);  // Very generous threshold
+  const SURFACE_THRESHOLD_SQ = ((baseVoxelSize * 1.5) ** 2);  // Very generous threshold
 
   for (let ti = 0; ti < triCount; ti++) {
     const b = ti * 9;
@@ -1544,6 +1545,164 @@ function flattenAttributeVec3(geometry: THREE.BufferGeometry, name: string): Flo
   return out;
 }
 
+// Calculate AABB (axis-aligned bounding box) for a rotated voxel
+function getVoxelAABB(voxel: Voxel): { min: [number, number, number]; max: [number, number, number] } {
+  const quat = voxel.quaternion || [0, 0, 0, 1];
+  const size = voxel.size;
+  const [px, py, pz] = voxel.position;
+  const half = size / 2;
+
+  // Local corners of the box
+  const corners = [
+    [-half, -half, -half], [half, -half, -half],
+    [-half, half, -half], [half, half, -half],
+    [-half, -half, half], [half, -half, half],
+    [-half, half, half], [half, half, half],
+  ];
+
+  // Rotate each corner using quaternion
+  const rotateByQuat = (p: number[], q: number[]): number[] => {
+    const [qx, qy, qz, qw] = q;
+    const [x, y, z] = p;
+    // v' = q * v * q^-1
+    const ix = qw * x + qy * z - qz * y;
+    const iy = qw * y + qz * x - qx * z;
+    const iz = qw * z + qx * y - qy * x;
+    const iw = -qx * x - qy * y - qz * z;
+    return [
+      ix * qw + iw * -qx + iy * -qz - iz * -qy,
+      iy * qw + iw * -qy + iz * -qx - ix * -qz,
+      iz * qw + iw * -qz + ix * -qy - iy * -qx,
+    ];
+  };
+
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+  for (const corner of corners) {
+    const [rx, ry, rz] = rotateByQuat(corner, quat);
+    const wx = px + rx, wy = py + ry, wz = pz + rz;
+    minX = Math.min(minX, wx);
+    maxX = Math.max(maxX, wx);
+    minY = Math.min(minY, wy);
+    maxY = Math.max(maxY, wy);
+    minZ = Math.min(minZ, wz);
+    maxZ = Math.max(maxZ, wz);
+  }
+
+  return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
+}
+
+// Calculate intersection volume of two AABBs
+function aabbIntersectionVolume(
+  aabb1: { min: number[]; max: number[] },
+  aabb2: { min: number[]; max: number[] }
+): number {
+  const dx = Math.min(aabb1.max[0], aabb2.max[0]) - Math.max(aabb1.min[0], aabb2.min[0]);
+  const dy = Math.min(aabb1.max[1], aabb2.max[1]) - Math.max(aabb1.min[1], aabb2.min[1]);
+  const dz = Math.min(aabb1.max[2], aabb2.max[2]) - Math.max(aabb1.min[2], aabb2.min[2]);
+  if (dx <= 0 || dy <= 0 || dz <= 0) return 0;
+  return dx * dy * dz;
+}
+
+// Measure average overlap percentage between adjacent voxels
+export function measureVoxelOverlap(voxels: Voxel[], voxelSize: number): number {
+  if (voxels.length === 0) return 0;
+
+  // Build spatial grid index
+  const gridMap = new Map<string, Voxel>();
+  const gridKey = (x: number, y: number, z: number) => `${x},${y},${z}`;
+
+  for (const v of voxels) {
+    const [x, y, z] = v.position;
+    const gx = Math.round(x / voxelSize);
+    const gy = Math.round(y / voxelSize);
+    const gz = Math.round(z / voxelSize);
+    gridMap.set(gridKey(gx, gy, gz), v);
+  }
+
+  let totalOverlapVolume = 0;
+  let overlapCount = 0;
+
+  // Check each voxel against 6 neighbors
+  for (const v of voxels) {
+    const [x, y, z] = v.position;
+    const gx = Math.round(x / voxelSize);
+    const gy = Math.round(y / voxelSize);
+    const gz = Math.round(z / voxelSize);
+    const aabb1 = getVoxelAABB(v);
+    const voxelVolume = v.size ** 3;
+
+    // Check 6 neighbors (only positive directions to avoid double-counting)
+    const neighbors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    for (const [dx, dy, dz] of neighbors) {
+      const neighbor = gridMap.get(gridKey(gx + dx, gy + dy, gz + dz));
+      if (!neighbor) continue;
+
+      const aabb2 = getVoxelAABB(neighbor);
+      const overlap = aabbIntersectionVolume(aabb1, aabb2);
+      if (overlap > 0) {
+        totalOverlapVolume += overlap;
+        overlapCount++;
+      }
+    }
+  }
+
+  if (overlapCount === 0) return 0;
+  const avgVoxelVolume = voxels[0].size ** 3;
+  return ((totalOverlapVolume / overlapCount) / avgVoxelVolume) * 100; // Return as percentage (0-100)
+}
+
+// Binary search to find optimal gapSizeRatio for target overlap <5%
+export async function calibrateGapSizeRatio(
+  geometry: THREE.BufferGeometry,
+  targetBlocks: number,
+  options: VoxelizeOptions,
+  maxOverlapPercent: number = 5,
+  onProgress?: (progress: number) => void
+): Promise<number> {
+  const MAX_ITERATIONS = 8;
+  let low = 0.3, high = 1.8; // Wider range: 0.3 (very small voxels, ~0% overlap) to 1.8 (large voxels, ~50% overlap)
+  let bestRatio = 1.0;
+  let bestDiff = Infinity; // Start with worst possible diff
+
+  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+    const mid = (low + high) / 2;
+    const testVoxels = await voxelizeGeometryAsync(
+      geometry,
+      targetBlocks,
+      { ...options, gapSizeRatio: mid },
+      onProgress
+    );
+
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox!;
+    const sizeX = bbox.max.x - bbox.min.x;
+    const sizeY = bbox.max.y - bbox.min.y;
+    const sizeZ = bbox.max.z - bbox.min.z;
+    const maxDim = Math.max(sizeX, sizeY, sizeZ);
+    const baseVoxelSize = maxDim / Math.cbrt(targetBlocks);
+
+    const overlapPercent = measureVoxelOverlap(testVoxels, baseVoxelSize);
+
+    // Track the gap ratio that produces overlap closest to target
+    const diff = Math.abs(overlapPercent - maxOverlapPercent);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestRatio = mid;
+    }
+
+    // Binary search: if measured overlap < target, need bigger voxels (higher gap ratio)
+    if (overlapPercent < maxOverlapPercent) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return bestRatio;
+}
+
 export async function voxelizeGeometryAsync(
   geometry: THREE.BufferGeometry,
   targetBlocks: number,
@@ -1596,7 +1755,7 @@ export async function voxelizeGeometryAsync(
         reject(new Error(`Worker error: ${error.message}`));
       };
 
-      const { surface = true, interior = true, curvedVoxels = true } = options;
+      const { surface = true, interior = true, curvedVoxels = true, gapSizeRatio = 1.58 } = options;
 
       const colorFlat = flattenAttributeVec3(geometry, 'color');
       const normalFlat = flattenAttributeVec3(geometry, 'normal');
@@ -1605,19 +1764,10 @@ export async function voxelizeGeometryAsync(
       const bboxMin: [number, number, number] = [bbox.min.x, bbox.min.y, bbox.min.z];
       const bboxMax: [number, number, number] = [bbox.max.x, bbox.max.y, bbox.max.z];
 
-      let colorsForWorker: Float32Array;
-      if (colorFlat && colorFlat.length === posFlat.length) {
-        let energy = 0;
-        const cap = Math.min(colorFlat.length, 9000);
-        for (let i = 0; i < cap; i++) energy += Math.abs(colorFlat[i]);
-        if (energy < 1e-5) {
-          colorsForWorker = buildPreviewVertexColors(positionsCloned, bboxMin, bboxMax, null);
-        } else {
-          colorsForWorker = colorFlat;
-        }
-      } else {
-        colorsForWorker = buildPreviewVertexColors(positionsCloned, bboxMin, bboxMax, null);
-      }
+      // Use material/texture colors if available, otherwise use preview gradient
+      const colorsForWorker: Float32Array = (colorFlat && colorFlat.length === posFlat.length)
+        ? colorFlat
+        : buildPreviewVertexColors(positionsCloned, bboxMin, bboxMax, null);
 
       // Clone buffers to avoid detached ArrayBuffer errors on multiple calls
       const indicesCloned = new Uint32Array(indices as ArrayLike<number>);
@@ -1650,6 +1800,7 @@ export async function voxelizeGeometryAsync(
           surface,
           interior,
           curvedVoxels,
+          gapSizeRatio,
         },
       }, [positionsBuffer, indicesBuffer, colorsBuffer, normalsBuffer]);
     } catch (error) {
