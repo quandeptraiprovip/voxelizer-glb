@@ -1247,7 +1247,7 @@ function closestDistToTriSq(
 
 function surfaceVoxelize(
   triPos:Float32Array, bbox:THREE.Box3,
-  gridX:number, gridY:number, gridZ:number, voxelSize:number, gapRatio:number
+  gridX:number, gridY:number, gridZ:number, voxelSize:number
 ): Voxel[] {
   const triCount = triPos.length / 9;
   const threshold = (voxelSize * Math.sqrt(3) / 2) ** 2;
@@ -1300,7 +1300,7 @@ function surfaceVoxelize(
       position:[posX,posY,posZ],
       normal: norm,
       color: [(norm[0]+1)/2,(norm[1]+1)/2,(norm[2]+1)/2],
-      size: voxelSize*(1-gapRatio),
+      size: voxelSize * 0.98,
       z_height: posZ,
       rotation: [0, 0, 0],
       quaternion: [0, 0, 0, 1],
@@ -1322,8 +1322,6 @@ interface VoxelizeOptions {
 export function voxelizeGeometry(
   geometry: THREE.BufferGeometry,
   targetBlocks: number,
-  blockSizeMul: number,
-  gapRatio: number,
   options: VoxelizeOptions = {}
 ): Voxel[] {
   const { surface = true, interior = true } = options;
@@ -1336,7 +1334,7 @@ export function voxelizeGeometry(
   const maxDim = Math.max(sizeX, sizeY, sizeZ);
   if (maxDim === 0) return [];
 
-  const baseVoxelSize = (maxDim / Math.cbrt(targetBlocks)) * blockSizeMul;
+  const baseVoxelSize = maxDim / Math.cbrt(targetBlocks);
   const gridX = Math.max(1, Math.ceil(sizeX / baseVoxelSize));
   const gridY = Math.max(1, Math.ceil(sizeY / baseVoxelSize));
   const gridZ = Math.max(1, Math.ceil(sizeZ / baseVoxelSize));
@@ -1402,7 +1400,7 @@ export function voxelizeGeometry(
   const surfaceVoxels = new Set<number>();
   const voxelColors = new Map<number, [number,number,number]>();
   // Increased threshold to catch more surface details
-  const SURFACE_THRESHOLD_SQ = ((baseVoxelSize * 0.866) ** 2);  // sqrt(3)/2 * voxelSize
+  const SURFACE_THRESHOLD_SQ = ((baseVoxelSize * 1.5) ** 2);  // More generous threshold
 
   for (let ti = 0; ti < triCount; ti++) {
     const b = ti * 9;
@@ -1475,9 +1473,9 @@ export function voxelizeGeometry(
           const voteY = countRayIntersections(cx, cy, cz, 'y', triPosData, triCount, bbox, baseVoxelSize);
           const voteZ = countRayIntersections(cx, cy, cz, 'z', triPosData, triCount, bbox, baseVoxelSize);
 
-          // Majority voting: at least 2/3 rays must say "inside"
+          // Relaxed voting: at least 1/3 rays says "inside" (previously 2/3)
           const insideCount = [voteX, voteY, voteZ].filter(v => v).length;
-          if (insideCount >= 2) {
+          if (insideCount >= 1) {
             grid[idx] = 2;
           }
         }
@@ -1500,7 +1498,7 @@ export function voxelizeGeometry(
         const posZ = bboxCenter[2] + (gz - gridZ*0.5 + 0.5)*baseVoxelSize;
 
         // Use uniform size for now (adaptive disabled for testing)
-        const displaySize = baseVoxelSize * (1 - gapRatio);
+        const displaySize = baseVoxelSize * 0.98;
 
         // Get sampled color or use position-based fallback
         let color: [number, number, number];
@@ -1549,8 +1547,6 @@ function flattenAttributeVec3(geometry: THREE.BufferGeometry, name: string): Flo
 export async function voxelizeGeometryAsync(
   geometry: THREE.BufferGeometry,
   targetBlocks: number,
-  blockSizeMul: number,
-  gapRatio: number,
   options: VoxelizeOptions = {},
   onProgress?: (progress: number) => void
 ): Promise<Voxel[]> {
@@ -1651,8 +1647,6 @@ export async function voxelizeGeometryAsync(
         },
         params: {
           targetBlocks,
-          blockSizeMul,
-          gapRatio,
           surface,
           interior,
           curvedVoxels,

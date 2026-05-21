@@ -16,8 +16,6 @@ interface GeometryData {
 
 interface VoxelizeParams {
   targetBlocks: number;
-  blockSizeMul: number;
-  gapRatio: number;
   surface: boolean;
   interior: boolean;
   curvedVoxels: boolean;
@@ -307,7 +305,7 @@ function voxelize(
   params: VoxelizeParams,
   onProgress?: (progress: number) => void
 ): Voxel[] {
-  const { targetBlocks, blockSizeMul, gapRatio, surface, interior, curvedVoxels } = params;
+  const { targetBlocks, surface, interior, curvedVoxels } = params;
 
   const sizeX = bbox.max[0] - bbox.min[0];
   const sizeY = bbox.max[1] - bbox.min[1];
@@ -315,7 +313,7 @@ function voxelize(
   const maxDim = Math.max(sizeX, sizeY, sizeZ);
   if (maxDim === 0) return [];
 
-  let voxelSize = (maxDim / Math.cbrt(targetBlocks)) * blockSizeMul;
+  let voxelSize = maxDim / Math.cbrt(targetBlocks);
   let { voxelSize: vs, gridX, gridY, gridZ } = clampVoxelGrid(sizeX, sizeY, sizeZ, voxelSize);
   voxelSize = vs;
 
@@ -557,7 +555,7 @@ function voxelize(
 
   // ── Gap-fill: close small holes with morphological closing ──────────────────
   if (interior) {
-    const FILL_VOTE_THRESHOLD = 5; // out of 6 face-neighbors
+    const FILL_VOTE_THRESHOLD = 3; // out of 6 face-neighbors (relaxed from 5)
     const MAX_FILL_ITERS = 2;
 
     for (let iter = 0; iter < MAX_FILL_ITERS; iter++) {
@@ -768,7 +766,7 @@ function voxelize(
   // ── STEP 3: Build output (one voxel per grid cell — no overlap) ───────────
   reportProgress(85);
   const voxels: Voxel[] = [];
-  const cellHalf = (voxelSize * (1 - gapRatio)) * 0.5;
+  const cellHalf = (voxelSize * 0.98) * 0.5;
 
   for (let gz=0; gz<gridZ; gz++) {
     for (let gy=0; gy<gridY; gy++) {
